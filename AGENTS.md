@@ -35,3 +35,4 @@ cd frontend && npm run lint    # ESLint (2 warnings in codebase)
 - Backend: Jest (`test:watch`, `test:cov`, `test:e2e` available)
 - Frontend uses `@tailwindcss/postcss` v4
 - No typecheck script in either package (ESLint runs type-aware rules)
+- **Termux**: Install ffmpeg via `pkg install ffmpeg` for thumbnail generation
