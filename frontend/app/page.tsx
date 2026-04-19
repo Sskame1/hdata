@@ -8,7 +8,7 @@ import { Modal } from "./components/Modal/Modal";
 import { Settings } from "./components/Settings/Settings";
 
 const isAndroidEmulator = typeof window !== 'undefined' && navigator.userAgent.includes('Android');
-const API_URL = isAndroidEmulator ? "http://10.0.2.2:3001" : "http://172.16.0.2:3001";
+const API_URL = isAndroidEmulator ? "http://10.0.2.2:3001" : "http://localhost:3001";
 
 interface MediaItem {
   id: string;
