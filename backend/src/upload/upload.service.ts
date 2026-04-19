@@ -15,19 +15,8 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
-let ffmpegPath: string;
-
-try {
-  ffmpegPath = require.resolve('ffmpeg-static/ffmpeg.exe').replace(/\\/g, '/');
-} catch {
-  ffmpegPath = join(
-    process.cwd(),
-    'node_modules/ffmpeg-static/ffmpeg.exe',
-  ).replace(/\\/g, '/');
-}
 
 const API_URL = 'http://172.16.0.2:3001';
-
 export interface Tag {
   id: string;
   name: string;
@@ -278,7 +267,7 @@ export class UploadService {
     const thumbPath = join(this.uploadDir, thumbFilename);
 
     try {
-      const cmd = `"${ffmpegPath}" -i "${videoPath}" -ss 00:00:01 -vframes 1 -vf "scale=320:-1" "${thumbPath}" -y`;
+      const cmd = `ffmpeg -i "${videoPath}" -ss 00:00:01 -vframes 1 -vf "scale=320:-1" "${thumbPath}" -y`;
       await execAsync(cmd);
       console.log('Thumbnail generated:', thumbFilename);
     } catch (err) {
