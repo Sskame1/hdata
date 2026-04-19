@@ -26,12 +26,12 @@ cd frontend && npm run lint    # ESLint (2 warnings in codebase)
 
 ## Architecture
 
-- **backend/src/main.ts**: NestJS entry, serves `/media` from `uploads/`, CORS allowed for `localhost:3000`
-- **frontend/app/**: Next.js 16 App Router
-- **frontend/app/globals.css**: Tailwind CSS v4
+- **backend/src/main.ts**: NestJS entry, serves `/media` from `uploads/`, CORS origin: `*`
+- **frontend/app/**: Next.js 16 App Router with Tailwind CSS v4
+- **frontend/app/globals.css**: Tailwind CSS v4 (`@import "tailwindcss"`)
 
 ## Notes
 
 - Backend: Jest (`test:watch`, `test:cov`, `test:e2e` available)
-- Frontend uses Tailwind CSS v4 with PostCSS (`postcss.config.mjs`)
+- Frontend uses `@tailwindcss/postcss` v4
 - No typecheck script in either package (ESLint runs type-aware rules)
