@@ -9,10 +9,19 @@ console.log('Frontend: http://' + address + ':3000');
 console.log('Backend:  http://' + address + ':3001');
 console.log('======================\n');
 
-console.log('Open these URLs on your phone (same network):');
-console.log('- Frontend: http://' + address + ':3000');
-console.log('- Backend:  http://' + address + ':3001');
-console.log('');
+const isLocal = address.match(/^(192\.168|10\.|172\.(1[6-9]|2|3[0-1]))/);
+
+if (isLocal) {
+  console.log('Open these URLs on your phone (same WiFi network):');
+  console.log('- Frontend: http://' + address + ':3000');
+  console.log('- Backend:  http://' + address + ':3001');
+  console.log('');
+} else {
+  console.log('Note: Using localhost because no local network IP found.');
+  console.log('- Frontend: http://localhost:3000');
+  console.log('- Backend:  http://localhost:3001');
+  console.log('');
+}
 
 console.log('Starting Next.js dev server...\n');
 
