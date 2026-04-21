@@ -4,7 +4,7 @@ const localtunnel = require('localtunnel');
 (async () => {
   console.log('\n=== STARTING ===\n');
 
-  const tunnel = await localtunnel({ port: 3000 });
+  const tunnel = await localtunnel({ port: 3000, subdomain: 'hdata' });
 
   console.log('Open on your phone:');
   console.log(tunnel.url);
