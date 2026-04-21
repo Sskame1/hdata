@@ -9,6 +9,7 @@ Monorepo: `backend/` (NestJS) and `frontend/` (Next.js). No root workspace.
 | backend | `npm run start` | Port 3001 |
 | backend | `npm run start:dev` | Watch mode |
 | frontend | `npm run dev` | Port 3000 |
+| frontend | `npm run dev:tunnel` | Dev with localtunnel (for phone access) |
 | frontend | `npm run build` | Production build |
 
 ## Development Commands
