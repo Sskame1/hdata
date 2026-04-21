@@ -1,4 +1,5 @@
-import na from 'network-address';
+/* eslint-disable @typescript-eslint/no-require-imports */
+const na = require('network-address');
 
 const address = na() || 'localhost';
 
