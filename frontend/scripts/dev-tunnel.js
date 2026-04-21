@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { spawn } = require('child_process');
-const internalIp = require('internal-ip');
+const internalIp = require('internal-ip').default || require('internal-ip');
 
-async function start() {
+(async () => {
   const address = await internalIp.v4() || 'localhost';
 
   console.log('\n=== NETWORK ADDRESS ===');
@@ -27,6 +27,4 @@ async function start() {
   dev.on('close', (code) => {
     process.exit(code);
   });
-}
-
-start();
+})();
