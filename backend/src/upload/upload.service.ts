@@ -10,13 +10,15 @@ import {
   renameSync,
   rmdirSync,
 } from 'fs';
-import { join } from 'path';
+import { join, extname } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { S3Service } from '../storage/s3.service';
 
 const execAsync = promisify(exec);
+const API_URL = process.env.API_URL || 'http://localhost:3001';
+let fileCounter = 0;
 
-const API_URL = 'http://172.16.0.2:3001';
 export interface Tag {
   id: string;
   name: string;
@@ -67,7 +69,7 @@ export class UploadService {
     'file-collections.json',
   );
 
-  constructor() {
+  constructor(private readonly s3Service: S3Service) {
     if (!existsSync(this.uploadDir)) {
       mkdirSync(this.uploadDir, { recursive: true });
     }
@@ -163,23 +165,25 @@ export class UploadService {
   saveCollections(collections: Collection[]): { success: boolean } {
     const existingCollections = this.readCollectionsFile();
 
-    collections.forEach((col) => {
-      const colDir = join(this.uploadDir, col.id);
-      if (!existsSync(colDir)) {
-        mkdirSync(colDir, { recursive: true });
-      }
-    });
-
-    existingCollections.forEach((oldCol) => {
-      const stillExists = collections.find((c) => c.id === oldCol.id);
-      if (!stillExists) {
-        const colDir = join(this.uploadDir, oldCol.id);
-        if (existsSync(colDir)) {
-          this.moveCollectionFilesBack(oldCol.id);
-          this.removeDir(colDir);
+    if (!this.s3Service.enabled) {
+      collections.forEach((col) => {
+        const colDir = join(this.uploadDir, col.id);
+        if (!existsSync(colDir)) {
+          mkdirSync(colDir, { recursive: true });
         }
-      }
-    });
+      });
+
+      existingCollections.forEach((oldCol) => {
+        const stillExists = collections.find((c) => c.id === oldCol.id);
+        if (!stillExists) {
+          const colDir = join(this.uploadDir, oldCol.id);
+          if (existsSync(colDir)) {
+            this.moveCollectionFilesBack(oldCol.id);
+            this.removeDir(colDir);
+          }
+        }
+      });
+    }
 
     this.writeCollectionsFile(collections);
     return { success: true };
@@ -235,18 +239,29 @@ export class UploadService {
   }
 
   saveFile(file: Express.Multer.File) {
+    const timestamp = Date.now();
+    fileCounter++;
+    const ext = extname(file.originalname);
+    const filename = `${timestamp}-${fileCounter}${ext}`;
+
     const isVideoFile =
       file.mimetype.startsWith('video/') ||
-      !!file.filename.match(/\.(mp4|webm|mov|avi|mkv)$/i);
+      !!filename.match(/\.(mp4|webm|mov|avi|mkv)$/i);
+
+    if (this.s3Service.enabled) {
+      void this.s3Service.putObject(filename, file.buffer, file.mimetype);
+    } else {
+      writeFileSync(join(this.uploadDir, filename), file.buffer);
+    }
 
     const result = {
-      id: file.filename.replace(/\.[^/.]+$/, ''),
-      url: `${API_URL}/media/${file.filename}`,
+      id: filename.replace(/\.[^/.]+$/, ''),
+      url: `${API_URL}/media/${filename}`,
       thumbnailUrl: isVideoFile
-        ? `${API_URL}/media/${file.filename.replace(/\.[^/.]+$/, '')}.jpg`
+        ? `${API_URL}/media/${filename.replace(/\.[^/.]+$/, '')}.jpg`
         : null,
       isVideoThumbnail: false,
-      filename: file.filename,
+      filename,
       originalName: file.originalname,
       mimetype: file.mimetype,
       size: file.size,
@@ -255,27 +270,57 @@ export class UploadService {
     };
 
     if (isVideoFile) {
-      void this.generateThumbnail(file.filename);
+      void this.generateThumbnail(filename, file.buffer);
     }
 
     return result;
   }
 
-  async generateThumbnail(videoFilename: string) {
-    const videoPath = join(this.uploadDir, videoFilename);
+  async generateThumbnail(videoFilename: string, buffer?: Buffer) {
     const thumbFilename = videoFilename.replace(/\.[^/.]+$/, '') + '.jpg';
-    const thumbPath = join(this.uploadDir, thumbFilename);
 
-    try {
-      const cmd = `ffmpeg -i "${videoPath}" -ss 00:00:01 -vframes 1 -vf "scale=320:-1" "${thumbPath}" -y`;
-      await execAsync(cmd);
-      console.log('Thumbnail generated:', thumbFilename);
-    } catch (err) {
-      console.error('Thumbnail error:', err);
+    if (this.s3Service.enabled && buffer) {
+      const tmpDir = join(this.uploadDir, 'tmp');
+      if (!existsSync(tmpDir)) {
+        mkdirSync(tmpDir, { recursive: true });
+      }
+      const tmpVideo = join(tmpDir, videoFilename);
+      const tmpThumb = join(tmpDir, thumbFilename);
+      writeFileSync(tmpVideo, buffer);
+      try {
+        const cmd = `ffmpeg -i "${tmpVideo}" -ss 00:00:01 -vframes 1 -vf "scale=320:-1" "${tmpThumb}" -y`;
+        await execAsync(cmd);
+        const thumbBuffer = readFileSync(tmpThumb);
+        await this.s3Service.putObject(
+          thumbFilename,
+          thumbBuffer,
+          'image/jpeg',
+        );
+        console.log('Thumbnail generated on S3:', thumbFilename);
+      } catch (err) {
+        console.error('Thumbnail error:', err);
+      } finally {
+        if (existsSync(tmpVideo)) unlinkSync(tmpVideo);
+        if (existsSync(tmpThumb)) unlinkSync(tmpThumb);
+      }
+    } else {
+      const videoPath = join(this.uploadDir, videoFilename);
+      const thumbPath = join(this.uploadDir, thumbFilename);
+      try {
+        const cmd = `ffmpeg -i "${videoPath}" -ss 00:00:01 -vframes 1 -vf "scale=320:-1" "${thumbPath}" -y`;
+        await execAsync(cmd);
+        console.log('Thumbnail generated:', thumbFilename);
+      } catch (err) {
+        console.error('Thumbnail error:', err);
+      }
     }
   }
 
-  getAllFiles() {
+  async getAllFiles() {
+    if (this.s3Service.enabled) {
+      return this.getAllFilesS3();
+    }
+
     if (!existsSync(this.uploadDir)) {
       return [];
     }
@@ -388,7 +433,67 @@ export class UploadService {
       );
   }
 
-  deleteFile(filename: string): boolean {
+  private async getAllFilesS3() {
+    const objects = await this.s3Service.listObjects();
+    const fileTags = this.readFileTagsFile();
+
+    const mediaObjects = objects.filter(
+      (o) => !o.key.endsWith('.json') && !o.key.startsWith('tmp/'),
+    );
+
+    return mediaObjects
+      .map((obj) => {
+        const parts = obj.key.split('/');
+        const filename = parts.length > 1 ? parts[1] : parts[0];
+        const collectionId = parts.length > 1 ? parts[0] : null;
+
+        const isVideo = !!filename.match(/\.(mp4|webm|mov|avi|mkv)$/i);
+        const thumbFilename = isVideo
+          ? filename.replace(/\.[^/.]+$/, '') + '.jpg'
+          : null;
+        const thumbKey = collectionId
+          ? `${collectionId}/${thumbFilename}`
+          : thumbFilename;
+        const thumbExists =
+          thumbFilename && mediaObjects.some((o) => o.key === thumbKey);
+
+        const namePart = filename.substring(filename.indexOf('-') + 1);
+        const originalName = namePart.includes('-')
+          ? namePart.substring(namePart.indexOf('-') + 1)
+          : namePart;
+
+        return {
+          id: filename.replace(/\.[^/.]+$/, ''),
+          url: collectionId
+            ? `${API_URL}/media/${collectionId}/${filename}`
+            : `${API_URL}/media/${filename}`,
+          thumbnailUrl: thumbExists
+            ? collectionId
+              ? `${API_URL}/media/${collectionId}/${thumbFilename}`
+              : `${API_URL}/media/${thumbFilename}`
+            : null,
+          isVideoThumbnail: false,
+          filename,
+          originalName: originalName || filename,
+          mimetype: this.getMimeType(filename),
+          size: obj.size,
+          createdAt: obj.lastModified,
+          tags: fileTags[filename] || [],
+          collection: collectionId,
+        };
+      })
+      .filter((f): f is NonNullable<typeof f> => f !== null)
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+  }
+
+  async deleteFile(filename: string): Promise<boolean> {
+    if (this.s3Service.enabled) {
+      return this.deleteFileS3(filename);
+    }
+
     try {
       const filePath = join(this.uploadDir, filename);
       if (existsSync(filePath)) {
@@ -413,6 +518,48 @@ export class UploadService {
         return true;
       }
       return false;
+    } catch {
+      return false;
+    }
+  }
+
+  private async deleteFileS3(filename: string): Promise<boolean> {
+    const thumbFilename = filename.replace(/\.[^/.]+$/, '') + '.jpg';
+    const fileCollections = this.readFileCollectionsFile();
+    const collectionId = fileCollections[filename] || null;
+
+    try {
+      const keysToDelete: string[] = [];
+      if (collectionId) {
+        keysToDelete.push(`${collectionId}/${filename}`);
+        keysToDelete.push(`${collectionId}/${thumbFilename}`);
+      } else {
+        keysToDelete.push(filename);
+        keysToDelete.push(thumbFilename);
+      }
+
+      for (const key of keysToDelete) {
+        await this.s3Service.deleteObject(key);
+      }
+
+      const fileTags = this.readFileTagsFile();
+      if (fileTags[filename]) {
+        const tags = this.readTagsFile();
+        const deletedTags = fileTags[filename];
+
+        deletedTags.forEach((tagName) => {
+          const tag = tags.find((t) => t.name === tagName);
+          if (tag && tag.count > 0) {
+            tag.count--;
+          }
+        });
+        this.writeTagsFile(tags);
+
+        delete fileTags[filename];
+        this.writeFileTagsFile(fileTags);
+      }
+
+      return true;
     } catch {
       return false;
     }
@@ -473,8 +620,6 @@ export class UploadService {
       png: 'image/png',
       gif: 'image/gif',
       webp: 'image/webp',
-      mp4: 'video/mp4',
-      webm: 'video/webm',
       mov: 'video/quicktime',
       svg: 'image/svg+xml',
       bmp: 'image/bmp',
@@ -497,6 +642,8 @@ export class UploadService {
       ts: 'application/typescript',
       mp3: 'audio/mpeg',
       wav: 'audio/wav',
+      mp4: 'video/mp4',
+      webm: 'video/webm',
       avi: 'video/x-msvideo',
       mkv: 'video/x-matroska',
     };
@@ -507,14 +654,24 @@ export class UploadService {
     return filename.replace(/\.[^/.]+$/, '') + '.jpg';
   }
 
-  updateFileCollection(
+  async updateFileCollection(
     filename: string,
     collectionId: string | null,
-  ): { success: boolean } {
+  ): Promise<{ success: boolean }> {
     try {
       const fileCollections = this.readFileCollectionsFile();
-      const currentCollection = fileCollections[filename];
+      const currentCollection = fileCollections[filename] || null;
       const thumbFilename = this.getThumbnailFilename(filename);
+
+      if (this.s3Service.enabled) {
+        return this.updateFileCollectionS3(
+          filename,
+          collectionId,
+          currentCollection,
+          thumbFilename,
+          fileCollections,
+        );
+      }
 
       if (collectionId) {
         const sourcePath = join(
@@ -592,6 +749,51 @@ export class UploadService {
     }
   }
 
+  private async updateFileCollectionS3(
+    filename: string,
+    collectionId: string | null,
+    currentCollection: string | null,
+    thumbFilename: string,
+    fileCollections: FileCollections,
+  ): Promise<{ success: boolean }> {
+    const sourceKey = currentCollection
+      ? `${currentCollection}/${filename}`
+      : filename;
+    const sourceThumbKey = currentCollection
+      ? `${currentCollection}/${thumbFilename}`
+      : thumbFilename;
+
+    if (collectionId) {
+      const targetKey = `${collectionId}/${filename}`;
+      const targetThumbKey = `${collectionId}/${thumbFilename}`;
+
+      if (sourceKey !== targetKey) {
+        await this.s3Service.copyObject(sourceKey, targetKey);
+        await this.s3Service.deleteObject(sourceKey);
+
+        if (await this.s3Service.exists(sourceThumbKey)) {
+          await this.s3Service.copyObject(sourceThumbKey, targetThumbKey);
+          await this.s3Service.deleteObject(sourceThumbKey);
+        }
+      }
+
+      fileCollections[filename] = collectionId;
+    } else if (currentCollection) {
+      await this.s3Service.copyObject(sourceKey, filename);
+      await this.s3Service.deleteObject(sourceKey);
+
+      if (await this.s3Service.exists(sourceThumbKey)) {
+        await this.s3Service.copyObject(sourceThumbKey, thumbFilename);
+        await this.s3Service.deleteObject(sourceThumbKey);
+      }
+
+      delete fileCollections[filename];
+    }
+
+    this.writeFileCollectionsFile(fileCollections);
+    return { success: true };
+  }
+
   private computeHash(filename: string): string {
     try {
       const filePath = join(this.uploadDir, filename);
@@ -605,8 +807,10 @@ export class UploadService {
     }
   }
 
-  getSyncData() {
-    const files = this.getAllFiles().filter((f) => {
+  async getSyncData() {
+    const allFiles = await this.getAllFiles();
+    const files = allFiles.filter((f) => {
+      if (this.s3Service.enabled) return true;
       const filePath = join(this.uploadDir, f.filename);
       return existsSync(filePath);
     });
@@ -628,7 +832,7 @@ export class UploadService {
     };
   }
 
-  syncFiles(
+  async syncFiles(
     syncData: {
       filename: string;
       originalName: string;
@@ -639,7 +843,7 @@ export class UploadService {
       hash: string;
     }[],
   ) {
-    const existingFiles = this.getAllFiles();
+    const existingFiles = await this.getAllFiles();
     const existingHashes = new Map(
       existingFiles.map((f) => [f.filename, this.computeHash(f.filename)]),
     );

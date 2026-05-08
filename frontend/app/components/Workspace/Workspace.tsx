@@ -1,27 +1,7 @@
 "use client";
 
 import { MediaCard } from "../MediaCard/MediaCard";
-
-interface Tag {
-  id: string;
-  name: string;
-  color: string;
-  count: number;
-}
-
-interface MediaItem {
-  id: string;
-  url: string;
-  thumbnailUrl?: string | null;
-  isVideoThumbnail?: boolean;
-  filename: string;
-  originalName: string;
-  mimetype: string;
-  size: number;
-  tags?: string[];
-  collection?: string | null;
-  collectionName?: string | null;
-}
+import type { MediaItem, Tag } from "@/types";
 
 interface WorkspaceProps {
   items: MediaItem[];

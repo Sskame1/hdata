@@ -1,23 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
-
-interface Tag {
-  id: string;
-  name: string;
-  color: string;
-  count: number;
-}
-
-interface SearchOptions {
-  query: string;
-  tags: string[];
-  tagMode: 'AND' | 'OR';
-  dateFrom?: string;
-  dateTo?: string;
-  sizeMin?: number;
-  sizeMax?: number;
-}
+import type { Tag, SearchOptions } from "@/types";
 
 interface HeaderProps {
   onUpload: (file: File) => void;

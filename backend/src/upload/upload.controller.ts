@@ -10,13 +10,8 @@ import {
   Put,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { memoryStorage } from 'multer';
 import { UploadService } from './upload.service';
-import { existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
-
-let fileCounter = 0;
 
 @Controller('uploads')
 export class UploadsController {
@@ -25,21 +20,7 @@ export class UploadsController {
   @Post()
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: (req, file, cb) => {
-          const uploadDir = join(process.cwd(), 'uploads');
-          if (!existsSync(uploadDir)) {
-            mkdirSync(uploadDir, { recursive: true });
-          }
-          cb(null, uploadDir);
-        },
-        filename: (req, file, cb) => {
-          const timestamp = Date.now();
-          fileCounter++;
-          const ext = extname(file.originalname);
-          cb(null, `${timestamp}-${fileCounter}${ext}`);
-        },
-      }),
+      storage: memoryStorage(),
       limits: { fileSize: 100 * 1024 * 1024 },
     }),
   )
@@ -53,8 +34,8 @@ export class UploadsController {
   }
 
   @Delete(':filename')
-  deleteFile(@Param('filename') filename: string) {
-    const deleted = this.uploadsService.deleteFile(filename);
+  async deleteFile(@Param('filename') filename: string) {
+    const deleted = await this.uploadsService.deleteFile(filename);
     return { success: deleted };
   }
 
@@ -82,12 +63,12 @@ export class UploadsController {
   }
 
   @Get('sync')
-  getSyncData() {
+  async getSyncData() {
     return this.uploadsService.getSyncData();
   }
 
   @Post('sync')
-  syncFiles(
+  async syncFiles(
     @Body()
     body: {
       files: {
@@ -136,7 +117,7 @@ export class UploadsController {
   }
 
   @Put(':filename/collection')
-  updateFileCollection(
+  async updateFileCollection(
     @Param('filename') filename: string,
     @Body() body: { collectionId: string | null },
   ) {

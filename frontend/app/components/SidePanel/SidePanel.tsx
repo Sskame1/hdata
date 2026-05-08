@@ -1,12 +1,7 @@
 "use client";
 
 import { useState } from "react";
-
-interface Collection {
-  id: string;
-  name: string;
-  color: string;
-}
+import type { Collection } from "@/types";
 
 interface SidePanelProps {
   activeFilter: string;

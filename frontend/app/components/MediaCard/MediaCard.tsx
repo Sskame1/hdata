@@ -2,27 +2,7 @@
 
 import Image from "next/image";
 import { useState } from "react";
-
-interface Tag {
-  id: string;
-  name: string;
-  color: string;
-  count: number;
-}
-
-interface MediaItem {
-  id: string;
-  url: string;
-  thumbnailUrl?: string | null;
-  isVideoThumbnail?: boolean;
-  filename: string;
-  originalName: string;
-  mimetype: string;
-  size: number;
-  tags?: string[];
-  collection?: string | null;
-  collectionName?: string | null;
-}
+import type { MediaItem, Tag } from "@/types";
 
 interface MediaCardProps {
   item: MediaItem;
@@ -78,6 +58,7 @@ export const MediaCard = ({ item, onClick, showBlur, tags = [] }: MediaCardProps
                   className={`object-cover ${showBlur ? "blur-sm" : ""}`}
                   sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                   unoptimized
+                  loading="eager"
                 />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center">
@@ -113,6 +94,7 @@ export const MediaCard = ({ item, onClick, showBlur, tags = [] }: MediaCardProps
               className={`object-cover transition-transform duration-300 ${isHovered ? "scale-105" : "scale-100"} ${showBlur ? "blur-sm" : ""}`}
               sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
               unoptimized
+              loading="eager"
             />
           </div>
         )}

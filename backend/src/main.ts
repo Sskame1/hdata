@@ -27,18 +27,21 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.use(
-    '/media',
-    express.static(join(process.cwd(), 'uploads'), {
-      setHeaders: (res, filepath) => {
-        res.set('Accept-Ranges', 'bytes');
-        const ext = filepath.split('.').pop()?.toLowerCase();
-        if (ext && MIME_TYPES[ext]) {
-          res.set('Content-Type', MIME_TYPES[ext]);
-        }
-      },
-    }),
-  );
+  const s3Endpoint = process.env.S3_ENDPOINT;
+  if (!s3Endpoint) {
+    app.use(
+      '/media',
+      express.static(join(process.cwd(), 'uploads'), {
+        setHeaders: (res, filepath) => {
+          res.set('Accept-Ranges', 'bytes');
+          const ext = filepath.split('.').pop()?.toLowerCase();
+          if (ext && MIME_TYPES[ext]) {
+            res.set('Content-Type', MIME_TYPES[ext]);
+          }
+        },
+      }),
+    );
+  }
 
   await app.listen(process.env.PORT ?? 3001);
   console.log(

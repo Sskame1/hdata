@@ -1,19 +1,7 @@
 "use client";
 
 import { useState } from "react";
-
-interface Tag {
-  id: string;
-  name: string;
-  color: string;
-  count: number;
-}
-
-interface Collection {
-  id: string;
-  name: string;
-  color: string;
-}
+import type { Tag, Collection } from "@/types";
 
 interface SettingsProps {
   isOpen: boolean;

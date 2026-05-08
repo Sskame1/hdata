@@ -2,33 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-
-interface Tag {
-  id: string;
-  name: string;
-  color: string;
-  count: number;
-}
-
-interface Collection {
-  id: string;
-  name: string;
-  color: string;
-}
-
-interface MediaItem {
-  id: string;
-  url: string;
-  thumbnailUrl?: string | null;
-  isVideoThumbnail?: boolean;
-  filename: string;
-  originalName: string;
-  mimetype: string;
-  size: number;
-  tags?: string[];
-  collection?: string | null;
-  collectionName?: string | null;
-}
+import type { MediaItem, Tag, Collection } from "@/types";
 
 interface ModalProps {
   item: MediaItem | null;
@@ -119,7 +93,6 @@ export const Modal = ({ item, onClose, onDelete, tags, onAddTag, onRemoveTag, co
   };
 
   const itemTags = item.tags?.map(tagName => tags.find(t => t.name === tagName)).filter(Boolean) as Tag[] || [];
-  const availableTags = tags.filter((tag) => !item.tags?.includes(tag.name));
 
   return (
     <div 
