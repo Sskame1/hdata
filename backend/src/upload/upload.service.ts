@@ -238,7 +238,7 @@ export class UploadService {
     return { success: true };
   }
 
-  saveFile(file: Express.Multer.File) {
+  async saveFile(file: Express.Multer.File) {
     const timestamp = Date.now();
     fileCounter++;
     const ext = extname(file.originalname);
@@ -249,7 +249,7 @@ export class UploadService {
       !!filename.match(/\.(mp4|webm|mov|avi|mkv)$/i);
 
     if (this.s3Service.enabled) {
-      void this.s3Service.putObject(filename, file.buffer, file.mimetype);
+      await this.s3Service.putObject(filename, file.buffer, file.mimetype);
     } else {
       writeFileSync(join(this.uploadDir, filename), file.buffer);
     }
@@ -525,21 +525,22 @@ export class UploadService {
 
   private async deleteFileS3(filename: string): Promise<boolean> {
     const thumbFilename = filename.replace(/\.[^/.]+$/, '') + '.jpg';
-    const fileCollections = this.readFileCollectionsFile();
-    const collectionId = fileCollections[filename] || null;
 
     try {
-      const keysToDelete: string[] = [];
+      const keysToDelete = [filename, thumbFilename];
+      const fileCollections = this.readFileCollectionsFile();
+      const collectionId = fileCollections[filename];
       if (collectionId) {
         keysToDelete.push(`${collectionId}/${filename}`);
         keysToDelete.push(`${collectionId}/${thumbFilename}`);
-      } else {
-        keysToDelete.push(filename);
-        keysToDelete.push(thumbFilename);
       }
 
       for (const key of keysToDelete) {
-        await this.s3Service.deleteObject(key);
+        try {
+          await this.s3Service.deleteObject(key);
+        } catch {
+          /* key may not exist */
+        }
       }
 
       const fileTags = this.readFileTagsFile();
@@ -769,28 +770,40 @@ export class UploadService {
 
       if (sourceKey !== targetKey) {
         await this.s3Service.copyObject(sourceKey, targetKey);
-        await this.s3Service.deleteObject(sourceKey);
 
         if (await this.s3Service.exists(sourceThumbKey)) {
           await this.s3Service.copyObject(sourceThumbKey, targetThumbKey);
-          await this.s3Service.deleteObject(sourceThumbKey);
         }
-      }
 
-      fileCollections[filename] = collectionId;
+        fileCollections[filename] = collectionId;
+        this.writeFileCollectionsFile(fileCollections);
+
+        await this.s3Service.deleteObject(sourceKey).catch(() => {});
+        if (await this.s3Service.exists(sourceThumbKey)) {
+          await this.s3Service.deleteObject(sourceThumbKey).catch(() => {});
+        }
+      } else {
+        fileCollections[filename] = collectionId;
+        this.writeFileCollectionsFile(fileCollections);
+      }
     } else if (currentCollection) {
       await this.s3Service.copyObject(sourceKey, filename);
-      await this.s3Service.deleteObject(sourceKey);
 
       if (await this.s3Service.exists(sourceThumbKey)) {
         await this.s3Service.copyObject(sourceThumbKey, thumbFilename);
-        await this.s3Service.deleteObject(sourceThumbKey);
       }
 
       delete fileCollections[filename];
+      this.writeFileCollectionsFile(fileCollections);
+
+      await this.s3Service.deleteObject(sourceKey).catch(() => {});
+      if (await this.s3Service.exists(sourceThumbKey)) {
+        await this.s3Service.deleteObject(sourceThumbKey).catch(() => {});
+      }
+    } else {
+      this.writeFileCollectionsFile(fileCollections);
     }
 
-    this.writeFileCollectionsFile(fileCollections);
     return { success: true };
   }
 

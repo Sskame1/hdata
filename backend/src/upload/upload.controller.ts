@@ -24,7 +24,7 @@ export class UploadsController {
       limits: { fileSize: 100 * 1024 * 1024 },
     }),
   )
-  uploadFile(@UploadedFile() file: Express.Multer.File) {
+  async uploadFile(@UploadedFile() file: Express.Multer.File) {
     return this.uploadsService.saveFile(file);
   }
 
