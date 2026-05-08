@@ -535,13 +535,7 @@ export class UploadService {
         keysToDelete.push(`${collectionId}/${thumbFilename}`);
       }
 
-      for (const key of keysToDelete) {
-        try {
-          await this.s3Service.deleteObject(key);
-        } catch {
-          /* key may not exist */
-        }
-      }
+      await this.s3Service.deleteObjects(keysToDelete);
 
       const fileTags = this.readFileTagsFile();
       if (fileTags[filename]) {

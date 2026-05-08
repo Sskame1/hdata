@@ -31,6 +31,7 @@ export function useMedia() {
   });
   const [activeFilter, setActiveFilter] = useState("all");
   const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
+  const [selectedFilenames, setSelectedFilenames] = useState<Set<string>>(new Set());
   const [showSettings, setShowSettings] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showBlur, setShowBlur] = useState(false);
@@ -88,8 +89,44 @@ export function useMedia() {
     if (result?.success) {
       setItems((prev) => prev.filter((item) => item.filename !== filename));
       setSelectedItem(null);
+      setSelectedFilenames((prev) => { const next = new Set(prev); next.delete(filename); return next; });
     }
   }, []);
+
+  const toggleSelection = useCallback((filename: string) => {
+    setSelectedFilenames((prev) => {
+      const next = new Set(prev);
+      if (next.has(filename)) next.delete(filename);
+      else next.add(filename);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedFilenames(new Set());
+  }, []);
+
+  const handleBatchDelete = useCallback(async () => {
+    for (const filename of selectedFilenames) {
+      const result = await deleteFile(filename);
+      if (result?.success) {
+        setItems((prev) => prev.filter((item) => item.filename !== filename));
+      }
+    }
+    setSelectedFilenames(new Set());
+  }, [selectedFilenames]);
+
+  const handleBatchCollection = useCallback(async (collectionId: string) => {
+    for (const filename of selectedFilenames) {
+      await saveFileCollection(filename, collectionId);
+      setItems((prev) =>
+        prev.map((item) =>
+          item.filename === filename ? { ...item, collection: collectionId } : item,
+        ),
+      );
+    }
+    setSelectedFilenames(new Set());
+  }, [selectedFilenames]);
 
   const handleFilterChange = useCallback((filter: string) => {
     if (filter === "settings") {
@@ -138,8 +175,9 @@ export function useMedia() {
 
   const addNewCollection = useCallback(
     (name: string, color: string) => {
+      const safeName = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
       const newCollection: Collection = {
-        id: Date.now().toString(),
+        id: `${Date.now()}_${safeName}`,
         name,
         color,
       };
@@ -298,11 +336,16 @@ export function useMedia() {
     collections,
     settings,
     filteredItems,
+    selectedFilenames,
     handleUpload,
     handleDelete,
     handleFilterChange,
     handleSearch,
     handleItemClick,
+    toggleSelection,
+    clearSelection,
+    handleBatchDelete,
+    handleBatchCollection,
     setShowMobileMenu,
     setShowSettings,
     setShowBlur,

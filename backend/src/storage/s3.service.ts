@@ -3,6 +3,7 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   CopyObjectCommand,
   GetObjectCommand,
   ListObjectsV2Command,
@@ -63,6 +64,16 @@ export class S3Service {
       new DeleteObjectCommand({
         Bucket: this.bucket,
         Key: key,
+      }),
+    );
+  }
+
+  async deleteObjects(keys: string[]): Promise<void> {
+    if (!this.client || keys.length === 0) return;
+    await this.client.send(
+      new DeleteObjectsCommand({
+        Bucket: this.bucket,
+        Delete: { Objects: keys.map((Key) => ({ Key })) },
       }),
     );
   }

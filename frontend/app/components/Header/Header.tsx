@@ -29,9 +29,11 @@ export const Header = ({ onUpload, onSearch, tags }: HeaderProps) => {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      onUpload(file);
+    const files = e.target.files;
+    if (files) {
+      for (const file of Array.from(files)) {
+        onUpload(file);
+      }
       e.target.value = "";
     }
   };
@@ -347,6 +349,7 @@ export const Header = ({ onUpload, onSearch, tags }: HeaderProps) => {
         accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.7z,.txt,.json,.xml,.html,.css,.js,.ts"
         onChange={handleFileChange}
         className="hidden"
+        multiple
       />
     </div>
   );

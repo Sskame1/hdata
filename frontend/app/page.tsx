@@ -20,11 +20,16 @@ export default function Home() {
     showBlur,
     tags,
     collections,
+    selectedFilenames,
     handleUpload,
     handleDelete,
     handleFilterChange,
     handleSearch,
     handleItemClick,
+    toggleSelection,
+    clearSelection,
+    handleBatchDelete,
+    handleBatchCollection,
     setShowMobileMenu,
     setShowSettings,
     setShowBlur,
@@ -92,6 +97,12 @@ export default function Home() {
           onItemClick={handleItemClick}
           showBlur={showBlur}
           tags={tags}
+          selectedFilenames={selectedFilenames}
+          onToggleSelection={toggleSelection}
+          onClearSelection={clearSelection}
+          onBatchDelete={handleBatchDelete}
+          onBatchCollection={handleBatchCollection}
+          collections={collections}
         />
       </div>
 

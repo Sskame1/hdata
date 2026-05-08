@@ -9,9 +9,11 @@ interface MediaCardProps {
   onClick: () => void;
   showBlur?: boolean;
   tags?: Tag[];
+  selected?: boolean;
+  onToggleSelection?: () => void;
 }
 
-export const MediaCard = ({ item, onClick, showBlur, tags = [] }: MediaCardProps) => {
+export const MediaCard = ({ item, onClick, showBlur, tags = [], selected, onToggleSelection }: MediaCardProps) => {
   const [isHovered, setIsHovered] = useState(false);
   const isVideo = item.mimetype.startsWith("video/") || 
     /\.(mp4|webm|mov|avi|mkv|m4v|ts)$/i.test(item.filename);
@@ -40,12 +42,26 @@ export const MediaCard = ({ item, onClick, showBlur, tags = [] }: MediaCardProps
 
   return (
     <div
-      className="relative group break-inside-avoid rounded-lg overflow-hidden cursor-pointer border border-[#2a2a3a] hover:border-[#00f5d4]/50 transition-all z-0"
+      className={`relative group break-inside-avoid rounded-lg overflow-hidden cursor-pointer border transition-all z-0 ${selected ? 'border-[#00f5d4] ring-1 ring-[#00f5d4]/50' : 'border-[#2a2a3a] hover:border-[#00f5d4]/50'}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={onClick}
       style={{ backgroundColor: '#15151f' }}
     >
+      {(onToggleSelection) && (
+        <div
+          className="absolute top-2 left-2 z-10"
+          onClick={(e) => { e.stopPropagation(); onToggleSelection(); }}
+        >
+          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${selected ? 'bg-[#00f5d4] border-[#00f5d4]' : 'bg-black/40 border-white/60 hover:border-white'}`}>
+            {selected && (
+              <svg className="w-3 h-3 text-[#0a0a0f]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </div>
+        </div>
+      )}
       <div className="relative w-full bg-[#12121a]">
         {isVideo ? (
           item.thumbnailUrl ? (
