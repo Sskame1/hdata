@@ -1,8 +1,0 @@
-node_modules
-.next
-out
-.git
-*.md
-android
-ios
-capacitor.config.ts

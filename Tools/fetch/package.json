@@ -1,7 +1,0 @@
-{
-  "name": "fetch",
-  "version": "1.0.0",
-  "description": "Download file from URL",
-  "type": "module",
-  "main": "index.js"
-}
