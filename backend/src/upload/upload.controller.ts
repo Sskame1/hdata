@@ -21,7 +21,7 @@ export class UploadsController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
-      limits: { fileSize: 100 * 1024 * 1024 },
+      limits: { fileSize: 2000 * 1024 * 1024 },
     }),
   )
   async uploadFile(@UploadedFile() file: Express.Multer.File) {
@@ -97,7 +97,7 @@ export class UploadsController {
 
   @Post('thumbnail/:filename')
   async generateThumbnail(@Param('filename') filename: string) {
-    await this.uploadsService.generateThumbnail(filename);
+    await this.uploadsService.regenerateThumbnailByFilename(filename);
     return { success: true, filename };
   }
 

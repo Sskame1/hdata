@@ -27,6 +27,7 @@ export function useMedia() {
   const [searchOptions, setSearchOptions] = useState<SearchOptions>({
     query: "",
     tags: [],
+    excludeTags: [],
     tagMode: "AND",
   });
   const [activeFilter, setActiveFilter] = useState("all");
@@ -128,6 +129,30 @@ export function useMedia() {
     setSelectedFilenames(new Set());
   }, [selectedFilenames]);
 
+  const handleBatchTags = useCallback(async (tagName: string) => {
+    let addedCount = 0;
+    for (const filename of selectedFilenames) {
+      const item = items.find((i) => i.filename === filename);
+      const currentTags = item?.tags || [];
+      if (currentTags.includes(tagName)) continue;
+      addedCount++;
+      const newTags = [...currentTags, tagName];
+      await saveFileTags(filename, newTags);
+      setItems((prev) =>
+        prev.map((item) =>
+          item.filename === filename ? { ...item, tags: newTags } : item,
+        ),
+      );
+    }
+    if (addedCount > 0) {
+      const updatedTags = tags.map((tag) =>
+        tag.name === tagName ? { ...tag, count: tag.count + addedCount } : tag,
+      );
+      updateTagsWithCounts(updatedTags);
+    }
+    setSelectedFilenames(new Set());
+  }, [selectedFilenames, items, tags, updateTagsWithCounts]);
+
   const handleFilterChange = useCallback((filter: string) => {
     if (filter === "settings") {
       setShowSettings(true);
@@ -180,6 +205,7 @@ export function useMedia() {
         id: `${Date.now()}_${safeName}`,
         name,
         color,
+        count: 0,
       };
       const updated = [...collections, newCollection];
       setCollections(updated);
@@ -195,6 +221,22 @@ export function useMedia() {
       saveCollections(updated);
     },
     [collections],
+  );
+
+  const handleReorderTags = useCallback(
+    (reordered: Tag[]) => {
+      setTags(reordered);
+      saveTags(reordered);
+    },
+    [],
+  );
+
+  const handleReorderCollections = useCallback(
+    (reordered: Collection[]) => {
+      setCollections(reordered);
+      saveCollections(reordered);
+    },
+    [],
   );
 
   const addTagToItem = useCallback(
@@ -346,6 +388,7 @@ export function useMedia() {
     clearSelection,
     handleBatchDelete,
     handleBatchCollection,
+    handleBatchTags,
     setShowMobileMenu,
     setShowSettings,
     setShowBlur,
@@ -355,6 +398,8 @@ export function useMedia() {
     updateTag,
     addNewCollection,
     deleteCollection,
+    handleReorderTags,
+    handleReorderCollections,
     addTagToItem,
     removeTagFromItem,
     addToCollection,

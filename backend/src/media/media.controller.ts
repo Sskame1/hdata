@@ -1,123 +1,81 @@
-import { Controller, Get, Param, Res } from '@nestjs/common';
-import type { Response } from 'express';
-import { createReadStream, existsSync, statSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { Controller, Get, Param, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { S3Service } from '../storage/s3.service';
+import { PrismaService } from '../database/database.service';
 
 const MIME_TYPES: Record<string, string> = {
-  mp4: 'video/mp4',
-  webm: 'video/webm',
-  mov: 'video/quicktime',
-  avi: 'video/x-msvideo',
-  mkv: 'video/x-matroska',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  png: 'image/png',
-  gif: 'image/gif',
-  webp: 'image/webp',
-  svg: 'image/svg+xml',
+  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime',
+  avi: 'video/x-msvideo', mkv: 'video/x-matroska', m4v: 'video/mp4', ts: 'video/mp2t',
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+  gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
   pdf: 'application/pdf',
 };
 
 @Controller('media')
 export class MediaController {
-  constructor(private readonly s3Service: S3Service) {}
+  constructor(
+    private readonly s3Service: S3Service,
+    private readonly prisma: PrismaService,
+  ) {}
 
-  @Get(':collection/:filename')
-  async getFileFromCollection(
-    @Param('collection') collection: string,
-    @Param('filename') filename: string,
+  @Get('*path')
+  async getFile(
+    @Param('path') pathParam: string | string[],
+    @Req() req: Request,
     @Res() res: Response,
   ) {
-    if (this.s3Service.enabled) {
-      return this.streamFromS3(`${collection}/${filename}`, res);
-    }
+    const path = Array.isArray(pathParam) ? pathParam.join('/') : pathParam;
+    let s3Key = path;
 
-    const ext = filename.split('.').pop()?.toLowerCase() || '';
-    const uploadDir = join(process.cwd(), 'uploads');
-    const filePath = join(uploadDir, collection, filename);
-
-    if (!existsSync(filePath)) {
-      return res.status(404).send('File not found');
-    }
-
-    const stats = statSync(filePath);
-    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Length', stats.size);
-    res.setHeader('Content-Range', `bytes 0-${stats.size - 1}/${stats.size}`);
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.statusCode = 200;
-
-    const stream = createReadStream(filePath);
-    stream.pipe(res);
-  }
-
-  @Get(':filename')
-  async getFile(@Param('filename') filename: string, @Res() res: Response) {
-    if (this.s3Service.enabled) {
-      return this.streamFromS3(filename, res);
-    }
-
-    const ext = filename.split('.').pop()?.toLowerCase() || '';
-    const uploadDir = join(process.cwd(), 'uploads');
-
-    let filePath = join(uploadDir, filename);
-    if (!existsSync(filePath)) {
-      const subdirs = readdirSync(uploadDir).filter((d) => {
-        const stat = statSync(join(uploadDir, d));
-        return stat.isDirectory();
-      });
-      for (const subdir of subdirs) {
-        const testPath = join(uploadDir, subdir, filename);
-        if (existsSync(testPath)) {
-          filePath = testPath;
-          break;
-        }
+    if (!path.includes('/') && !path.startsWith('tmp')) {
+      const file = await this.prisma.file.findUnique({ where: { filename: path } });
+      if (file) {
+        s3Key = file.storageKey;
       }
     }
 
-    if (!existsSync(filePath)) {
-      return res.status(404).send('File not found');
-    }
-
-    const stats = statSync(filePath);
-    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Length', stats.size);
-    res.setHeader('Content-Range', `bytes 0-${stats.size - 1}/${stats.size}`);
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.statusCode = 200;
-
-    const stream = createReadStream(filePath);
-    stream.pipe(res);
+    await this.streamFromS3(s3Key, req, res);
   }
 
-  private async streamFromS3(key: string, res: Response) {
+  private async streamFromS3(key: string, req: Request, res: Response) {
+    const ext = key.split('.').pop()?.toLowerCase() || '';
+    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+    const rangeHeader = req.headers.range;
+
     try {
-      const stream = await this.s3Service.getObjectStream(key);
-      const ext = key.split('.').pop()?.toLowerCase() || '';
-      const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+      if (rangeHeader) {
+        const meta = await this.s3Service.getObjectMetadata(key);
+        if (!meta) return res.status(404).send('File not found');
 
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.statusCode = 200;
+        const fileSize = meta.size;
+        const parts = rangeHeader.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
 
-      stream.on('error', (err) => {
-        console.error('S3 stream error for', key, err);
-        if (!res.headersSent) {
-          res.status(500).send('Stream error');
+        if (start >= fileSize) {
+          res.setHeader('Content-Range', `bytes */${fileSize}`);
+          return res.status(416).send();
         }
-      });
 
-      stream.pipe(res);
-    } catch (err) {
-      console.error('S3 getObjectStream error for', key, err);
-      if (!res.headersSent) {
-        res.status(404).send('File not found');
+        const chunkSize = end - start + 1;
+        res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+        res.setHeader('Content-Length', chunkSize);
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.statusCode = 206;
+
+        const stream = await this.s3Service.getObjectStream(key, `bytes=${start}-${end}`);
+        stream.pipe(res);
+      } else {
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.statusCode = 200;
+
+        const stream = await this.s3Service.getObjectStream(key);
+        stream.pipe(res);
       }
+    } catch {
+      if (!res.headersSent) res.status(404).send('File not found');
     }
   }
 }

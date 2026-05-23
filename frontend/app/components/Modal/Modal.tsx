@@ -1,8 +1,21 @@
 "use client";
 
-import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useState, memo } from "react";
 import type { MediaItem, Tag, Collection } from "@/types";
+
+const VideoPlayer = memo(function VideoPlayer({ url }: { url: string }) {
+  return (
+    <div className="relative bg-dark rounded-lg overflow-hidden flex items-center justify-center w-full">
+      <video
+        src={url}
+        controls
+        className="max-h-[40vh] md:max-h-[65vh] w-full"
+        preload="auto"
+        onError={(e) => console.error('Video error:', e.currentTarget.error)}
+      />
+    </div>
+  );
+});
 
 interface ModalProps {
   item: MediaItem | null;
@@ -107,37 +120,33 @@ export const Modal = ({ item, onClose, onDelete, tags, onAddTag, onRemoveTag, co
       >
         <button
           onClick={onClose}
-          className="absolute -top-10 md:-top-12 right-0 text-[#8a8a9a] hover:text-[#00f5d4] transition-colors z-10"
+          className="absolute -top-10 md:-top-12 right-0 text-muted hover:text-rose transition-colors z-10"
         >
           <svg className="w-6 h-6 md:w-8 md:h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
 
-        <div className="bg-[#12121a] rounded-lg p-2 md:p-4 border border-[#2a2a3a] flex flex-col items-center justify-center order-1 md:order-none overflow-hidden">
+        <div className="bg-surface rounded-lg p-2 md:p-4 border border-border flex flex-col items-center justify-center order-1 md:order-none overflow-hidden">
           <div className={`flex items-center justify-center overflow-auto w-full ${isVideo || isDoc ? '' : 'max-h-[50vh] md:max-h-[65vh]'}`}>
             {isVideo ? (
-              <div className="relative bg-[#0a0a0f] rounded-lg overflow-hidden flex items-center justify-center w-full">
-                <video
-                  src={item.url}
-                  controls
-                  className="max-h-[40vh] md:max-h-[65vh] w-full"
-                  preload="auto"
-                  onError={(e) => console.error('Video error:', e.currentTarget.error)}
-                />
-              </div>
+              <VideoPlayer url={item.url} />
             ) : isDoc ? (
-              <div className="max-h-[40vh] md:max-h-[65vh] w-[300px] md:w-[400px] flex items-center justify-center bg-[#0a0a0f] rounded-lg">
+              <div className="max-h-[40vh] md:max-h-[65vh] w-[300px] md:w-[400px] flex items-center justify-center bg-dark rounded-lg">
                 <div className="text-center">
                   <div className="text-6xl mb-4">📄</div>
-                  <p className="text-[#e0e0e0] font-mono">{item.originalName}</p>
-                  <p className="text-[#5a5a6a] font-mono text-sm mt-2">{formatSize(item.size)}</p>
+                  <p className="text-text font-mono">{item.originalName}</p>
+                  <p className="text-dim font-mono text-sm mt-2">{formatSize(item.size)}</p>
                 </div>
               </div>
             ) : (
               <div 
-                className="overflow-hidden max-w-full max-h-[65vh] flex items-center justify-center touch-none"
-                style={{ cursor: isDragging ? 'grabbing' : zoom > 1 ? 'grab' : 'default' }}
+                className="flex items-center justify-center w-full touch-none"
+                style={{ 
+                  maxHeight: '65vh',
+                  cursor: isDragging ? 'grabbing' : zoom > 1 ? 'grab' : 'default',
+                  overflow: zoom > 1 ? 'hidden' : 'visible',
+                }}
                 onMouseDown={(e) => {
                   if (zoom > 1) {
                     setIsDragging(true);
@@ -160,14 +169,18 @@ export const Modal = ({ item, onClose, onDelete, tags, onAddTag, onRemoveTag, co
                   transformOrigin: 'center center',
                   transition: isDragging ? 'none' : 'transform 0.1s ease'
                 }}>
-                  <Image
+                  <img
                     src={item.url}
                     alt={item.originalName}
-                    width={800}
-                    height={600}
-                    className="rounded-lg object-contain"
-                    unoptimized
+                    className="rounded-lg block"
                     draggable={false}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '65vh',
+                      width: 'auto',
+                      height: 'auto',
+                      objectFit: 'contain',
+                    }}
                   />
                 </div>
               </div>
@@ -177,22 +190,22 @@ export const Modal = ({ item, onClose, onDelete, tags, onAddTag, onRemoveTag, co
             <div className="flex items-center gap-2 mt-3">
               <button
                 onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
-                className="w-8 h-8 flex items-center justify-center bg-[#1a1a25] hover:bg-[#2a2a3a] border border-[#2a2a3a] rounded text-[#e0e0e0] font-mono text-sm transition-colors"
+                className="w-8 h-8 flex items-center justify-center bg-card hover:bg-border border border-border rounded text-text font-mono text-sm transition-colors"
               >
                 −
               </button>
-              <span className="text-[#e0e0e0] font-mono text-xs w-12 text-center">
+              <span className="text-text font-mono text-xs w-12 text-center">
                 {Math.round(zoom * 100)}%
               </span>
               <button
                 onClick={() => setZoom(Math.min(3, zoom + 0.25))}
-                className="w-8 h-8 flex items-center justify-center bg-[#1a1a25] hover:bg-[#2a2a3a] border border-[#2a2a3a] rounded text-[#e0e0e0] font-mono text-sm transition-colors"
+                className="w-8 h-8 flex items-center justify-center bg-card hover:bg-border border border-border rounded text-text font-mono text-sm transition-colors"
               >
                 +
               </button>
               <button
                 onClick={() => { setZoom(1); setPosition({ x: 0, y: 0 }); }}
-                className="px-2 h-8 flex items-center justify-center bg-[#1a1a25] hover:bg-[#2a2a3a] border border-[#2a2a3a] rounded text-[#e0e0e0] font-mono text-xs transition-colors"
+                className="px-2 h-8 flex items-center justify-center bg-card hover:bg-border border border-border rounded text-text font-mono text-xs transition-colors"
               >
                 RESET
               </button>
@@ -201,16 +214,16 @@ export const Modal = ({ item, onClose, onDelete, tags, onAddTag, onRemoveTag, co
         </div>
 
         <div className="w-full md:w-72 flex flex-col justify-between order-2 md:order-none max-h-[35vh] md:max-h-none overflow-y-auto">
-          <div className="text-[#e0e0e0]">
+          <div className="text-text">
             <p className="font-mono text-xs md:text-sm truncate">{item.originalName}</p>
-            <p className="text-[#5a5a6a] text-xs font-mono mt-1">{formatSize(item.size)}</p>
-            <p className="text-[#5a5a6a] text-xs font-mono">{item.mimetype}</p>
+            <p className="text-dim text-xs font-mono mt-1">{formatSize(item.size)}</p>
+            <p className="text-dim text-xs font-mono">{item.mimetype}</p>
             
             {(itemTags.length > 0 || item.collection) && (
               <div className="flex flex-wrap gap-2 mt-4">
                 {item.collection && (
                   <span
-                    className="px-2 py-1 rounded text-xs font-mono flex items-center gap-1 bg-[#9b5de5]/80 text-white"
+                    className="px-2 py-1 rounded text-xs font-mono flex items-center gap-1 bg-mauve/80 text-white"
                   >
                     📁 {item.collectionName || item.collection}
                     {onRemoveFromCollection && (
@@ -247,21 +260,21 @@ export const Modal = ({ item, onClose, onDelete, tags, onAddTag, onRemoveTag, co
               <div className="relative">
                 <button
                   onClick={() => setShowTagMenu(!showTagMenu)}
-                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-[#9b5de5]/20 hover:bg-[#9b5de5]/30 border border-[#9b5de5]/50 text-[#9b5de5] rounded-lg font-mono text-sm transition-colors"
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-mauve/20 hover:bg-mauve/30 border border-mauve/50 text-mauve rounded-lg font-mono text-sm transition-colors"
                 >
                   <span className="text-sm">#</span>
                   ADD TAG
                 </button>
                 
                 {showTagMenu && (
-                  <div className="absolute left-0 right-0 top-12 w-full bg-[#12121a] rounded-lg shadow-xl overflow-hidden z-[100] max-h-48 overflow-y-auto border border-[#2a2a3a]">
-                    <div className="sticky top-0 bg-[#12121a] p-2 border-b border-[#2a2a3a]">
+                  <div className="absolute left-0 right-0 top-12 w-full bg-surface rounded-lg shadow-xl overflow-hidden z-[100] max-h-48 overflow-y-auto border border-border">
+                    <div className="sticky top-0 bg-surface p-2 border-b border-border">
                       <input
                         type="text"
                         value={tagSearch}
                         onChange={(e) => setTagSearch(e.target.value)}
                         placeholder="SEARCH..."
-                        className="w-full px-2 py-1 rounded bg-[#0a0a0f] border border-[#2a2a3a] focus:border-[#9b5de5] outline-none font-mono text-xs text-[#e0e0e0]"
+                        className="w-full px-2 py-1 rounded bg-dark border border-border focus:border-mauve outline-none font-mono text-xs text-text"
                         autoFocus
                       />
                     </div>
@@ -275,14 +288,14 @@ export const Modal = ({ item, onClose, onDelete, tags, onAddTag, onRemoveTag, co
                             setShowTagMenu(false);
                             setTagSearch("");
                           }}
-                          className="w-full px-3 py-2 flex items-center gap-2 hover:bg-[#1a1a25] text-left transition-colors cursor-pointer"
+                          className="w-full px-3 py-2 flex items-center gap-2 hover:bg-card text-left transition-colors cursor-pointer"
                         >
                           <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
-                          <span className="text-[#e0e0e0] font-mono text-sm">{tag.name}</span>
+                          <span className="text-text font-mono text-sm">{tag.name}</span>
                         </button>
                       ))
                     ) : (
-                      <div className="px-4 py-3 text-[#5a5a6a] font-mono text-sm">NO_TAGS_FOUND</div>
+                      <div className="px-4 py-3 text-dim font-mono text-sm">NO_TAGS_FOUND</div>
                     )}
                   </div>
                 )}
@@ -292,21 +305,21 @@ export const Modal = ({ item, onClose, onDelete, tags, onAddTag, onRemoveTag, co
                 <div className="relative">
                   <button
                     onClick={() => setShowCollectionMenu(!showCollectionMenu)}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-[#00f5d4]/20 hover:bg-[#00f5d4]/30 border border-[#00f5d4]/50 text-[#00f5d4] rounded-lg font-mono text-sm transition-colors"
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-rose/20 hover:bg-rose/30 border border-rose/50 text-rose rounded-lg font-mono text-sm transition-colors"
                   >
                     <span className="text-sm">📁</span>
                     ADD FOLDER
                   </button>
                   
                   {showCollectionMenu && (
-                    <div className="absolute left-0 right-0 top-12 w-full bg-[#12121a] rounded-lg shadow-xl overflow-hidden z-[100] max-h-48 overflow-y-auto border border-[#2a2a3a]">
-                      <div className="sticky top-0 bg-[#12121a] p-2 border-b border-[#2a2a3a]">
+                    <div className="absolute left-0 right-0 top-12 w-full bg-surface rounded-lg shadow-xl overflow-hidden z-[100] max-h-48 overflow-y-auto border border-border">
+                      <div className="sticky top-0 bg-surface p-2 border-b border-border">
                         <input
                           type="text"
                           value={collectionSearch}
                           onChange={(e) => setCollectionSearch(e.target.value)}
                           placeholder="SEARCH..."
-                          className="w-full px-2 py-1 rounded bg-[#0a0a0f] border border-[#2a2a3a] focus:border-[#00f5d4] outline-none font-mono text-xs text-[#e0e0e0]"
+                          className="w-full px-2 py-1 rounded bg-dark border border-border focus:border-rose outline-none font-mono text-xs text-text"
                           autoFocus
                         />
                       </div>
@@ -320,14 +333,14 @@ export const Modal = ({ item, onClose, onDelete, tags, onAddTag, onRemoveTag, co
                               setShowCollectionMenu(false);
                               setCollectionSearch("");
                             }}
-                            className="w-full px-3 py-2 flex items-center gap-2 hover:bg-[#1a1a25] text-left transition-colors cursor-pointer"
+                            className="w-full px-3 py-2 flex items-center gap-2 hover:bg-card text-left transition-colors cursor-pointer"
                           >
                             <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: col.color }} />
-                            <span className="text-[#e0e0e0] font-mono text-sm">{col.name}</span>
+                            <span className="text-text font-mono text-sm">{col.name}</span>
                           </button>
                         ))
                       ) : (
-                        <div className="px-4 py-3 text-[#5a5a6a] font-mono text-sm">NO_FOLDERS_FOUND</div>
+                        <div className="px-4 py-3 text-dim font-mono text-sm">NO_FOLDERS_FOUND</div>
                       )}
                     </div>
                   )}
@@ -336,7 +349,7 @@ export const Modal = ({ item, onClose, onDelete, tags, onAddTag, onRemoveTag, co
               
               <button
                 onClick={onClose}
-                className="w-full flex items-center justify-center gap-2 px-3 py-3 bg-[#2a2a3a] hover:bg-[#3a3a4a] border border-[#4a4a5a] text-[#e0e0e0] rounded-lg font-mono text-sm transition-colors touch-manipulation"
+                className="w-full flex items-center justify-center gap-2 px-3 py-3 bg-card hover:bg-border border border-border text-text rounded-lg font-mono text-sm transition-colors touch-manipulation"
               >
                 CLOSE
               </button>

@@ -17,6 +17,7 @@ export const MediaCard = ({ item, onClick, showBlur, tags = [], selected, onTogg
   const [isHovered, setIsHovered] = useState(false);
   const isVideo = item.mimetype.startsWith("video/") || 
     /\.(mp4|webm|mov|avi|mkv|m4v|ts)$/i.test(item.filename);
+  const isGif = /\.gif$/i.test(item.filename);
   const isDoc = item.mimetype.startsWith("application/") || 
     ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "zip", "rar", "7z", "txt", "json", "xml", "html", "css", "js", "ts"].some(ext => item.filename.toLowerCase().endsWith(ext));
 
@@ -42,27 +43,27 @@ export const MediaCard = ({ item, onClick, showBlur, tags = [], selected, onTogg
 
   return (
     <div
-      className={`relative group break-inside-avoid rounded-lg overflow-hidden cursor-pointer border transition-all z-0 ${selected ? 'border-[#00f5d4] ring-1 ring-[#00f5d4]/50' : 'border-[#2a2a3a] hover:border-[#00f5d4]/50'}`}
+      className={`relative group break-inside-avoid rounded-lg overflow-hidden cursor-pointer border transition-all z-0 ${selected ? 'border-rose ring-1 ring-rose/50' : 'border-border hover:border-rose/50'}`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={onClick}
-      style={{ backgroundColor: '#15151f' }}
+      style={{ backgroundColor: '#1d1625' }}
     >
       {(onToggleSelection) && (
         <div
           className="absolute top-2 left-2 z-10"
           onClick={(e) => { e.stopPropagation(); onToggleSelection(); }}
         >
-          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${selected ? 'bg-[#00f5d4] border-[#00f5d4]' : 'bg-black/40 border-white/60 hover:border-white'}`}>
+          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${selected ? 'bg-rose border-rose' : 'bg-black/40 border-white/60 hover:border-white'}`}>
             {selected && (
-              <svg className="w-3 h-3 text-[#0a0a0f]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3 text-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
               </svg>
             )}
           </div>
         </div>
       )}
-      <div className="relative w-full bg-[#12121a]">
+      <div className="relative w-full bg-surface">
         {isVideo ? (
           item.thumbnailUrl ? (
             <>
@@ -74,7 +75,7 @@ export const MediaCard = ({ item, onClick, showBlur, tags = [], selected, onTogg
                   className={`object-cover ${showBlur ? "blur-sm" : ""}`}
                   sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                   unoptimized
-                  loading="eager"
+                  loading="lazy"
                 />
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center">
@@ -86,19 +87,43 @@ export const MediaCard = ({ item, onClick, showBlur, tags = [], selected, onTogg
               </div>
             </>
           ) : (
-            <div className="flex flex-col items-center justify-center w-full h-full bg-[#12121a]">
-              <svg className="w-12 h-12 text-[#00f5d4]" fill="currentColor" viewBox="0 0 24 24">
+            <div className="flex flex-col items-center justify-center w-full h-full bg-surface">
+              <svg className="w-12 h-12 text-rose" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M8 5v14l11-7z" />
               </svg>
-              <div className="text-[10px] text-[#5a5a6a] font-mono mt-1">VIDEO</div>
+              <div className="text-[10px] text-dim font-mono mt-1">VIDEO</div>
+            </div>
+          )
+        ) : isGif ? (
+          item.thumbnailUrl ? (
+            <div className="relative w-full aspect-[4/5]">
+              <Image
+                src={item.thumbnailUrl}
+                alt={item.originalName}
+                fill
+                className={`object-cover ${showBlur ? "blur-sm" : ""}`}
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                unoptimized
+                loading="lazy"
+              />
+              <div className="absolute top-2 right-2 px-2 py-0.5 bg-rose/80 text-white text-[10px] font-mono rounded">GIF</div>
+            </div>
+          ) : (
+            <div className="relative w-full aspect-[4/5] flex items-center justify-center bg-surface">
+              <div className="text-5xl mb-2">🎞️</div>
+              <div className="absolute top-2 right-2 px-2 py-0.5 bg-rose/80 text-white text-[10px] font-mono rounded">GIF</div>
+              <div className="absolute bottom-2 left-2 right-2">
+                <div className="text-[10px] text-dim font-mono truncate">{item.originalName}</div>
+                <div className="text-[10px] text-dim font-mono">{formatSize(item.size)}</div>
+              </div>
             </div>
           )
         ) : isDoc ? (
-          <div className="relative w-full aspect-[4/5] flex items-center justify-center bg-[#12121a]">
+          <div className="relative w-full aspect-[4/5] flex items-center justify-center bg-surface">
             <div className="text-4xl">{getFileIcon()}</div>
             <div className="absolute bottom-2 left-2 right-2">
-              <div className="text-[10px] text-[#5a5a6a] font-mono truncate">{item.originalName}</div>
-              <div className="text-[10px] text-[#5a5a6a] font-mono">{formatSize(item.size)}</div>
+              <div className="text-[10px] text-dim font-mono truncate">{item.originalName}</div>
+              <div className="text-[10px] text-dim font-mono">{formatSize(item.size)}</div>
             </div>
           </div>
         ) : (
@@ -110,7 +135,7 @@ export const MediaCard = ({ item, onClick, showBlur, tags = [], selected, onTogg
               className={`object-cover transition-transform duration-300 ${isHovered ? "scale-105" : "scale-100"} ${showBlur ? "blur-sm" : ""}`}
               sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
               unoptimized
-              loading="eager"
+              loading="lazy"
             />
           </div>
         )}
@@ -120,7 +145,7 @@ export const MediaCard = ({ item, onClick, showBlur, tags = [], selected, onTogg
         )}
         
         {(item.collectionName || item.collection) && (
-          <div className="absolute top-2 right-2 px-2 py-0.5 bg-[#9b5de5]/80 text-white text-[10px] font-mono rounded">
+          <div className="absolute top-2 right-2 px-2 py-0.5 bg-mauve/80 text-white text-[10px] font-mono rounded">
             {item.collectionName || item.collection}
           </div>
         )}

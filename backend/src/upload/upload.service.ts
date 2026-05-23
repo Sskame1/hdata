@@ -1,241 +1,62 @@
 import { Injectable } from '@nestjs/common';
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  statSync,
-  unlinkSync,
-  readFileSync,
-  writeFileSync,
-  renameSync,
-  rmdirSync,
-} from 'fs';
-import { join, extname } from 'path';
+import { extname } from 'path';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import type { Prisma } from '../generated/client.js';
 import { S3Service } from '../storage/s3.service';
+import { PrismaService } from '../database/database.service';
 
 const execAsync = promisify(exec);
 const API_URL = process.env.API_URL || 'http://localhost:3001';
 let fileCounter = 0;
 
-export interface Tag {
-  id: string;
-  name: string;
-  color: string;
-  count: number;
+function getFileType(mimetype: string, filename: string): string {
+  if (/\.gif$/i.test(filename) || mimetype === 'image/gif') return 'gif';
+  if (mimetype.startsWith('video/') || /\.(mp4|webm|mov|avi|mkv|m4v|ts)$/i.test(filename)) return 'video';
+  if (mimetype.startsWith('image/')) return 'img';
+  return 'doc';
 }
 
-export interface Collection {
-  id: string;
-  name: string;
-  color: string;
+function hasThumbnail(type: string): boolean {
+  return type === 'video' || type === 'gif';
 }
 
-interface FileTags {
-  [filename: string]: string[];
+function thumbDir(type: string): string {
+  return `${type}/thumbnails`;
 }
 
-interface FileCollections {
-  [filename: string]: string;
-}
-
-export interface Settings {
-  STEALTH_MODE: boolean;
-}
+const MIME_MAP: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+  webp: 'image/webp', mov: 'video/quicktime', svg: 'image/svg+xml', bmp: 'image/bmp',
+  pdf: 'application/pdf', doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  zip: 'application/zip', rar: 'application/x-rar-compressed',
+  '7z': 'application/x-7z-compressed', txt: 'text/plain',
+  json: 'application/json', xml: 'application/xml',
+  html: 'text/html', css: 'text/css', js: 'application/javascript',
+  ts: 'application/typescript', mp3: 'audio/mpeg', wav: 'audio/wav',
+  mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm',
+  avi: 'video/x-msvideo', mkv: 'video/x-matroska',
+};
 
 @Injectable()
 export class UploadService {
-  private readonly uploadDir = join(process.cwd(), 'uploads');
-  private readonly tagsFile = join(process.cwd(), 'uploads', 'tags.json');
-  private readonly fileTagsFile = join(
-    process.cwd(),
-    'uploads',
-    'file-tags.json',
-  );
-  private readonly settingsFile = join(
-    process.cwd(),
-    'uploads',
-    'settings.json',
-  );
-  private readonly collectionsFile = join(
-    process.cwd(),
-    'uploads',
-    'collections.json',
-  );
-  private readonly fileCollectionsFile = join(
-    process.cwd(),
-    'uploads',
-    'file-collections.json',
-  );
+  private readonly tmpDir: string;
 
-  constructor(private readonly s3Service: S3Service) {
-    if (!existsSync(this.uploadDir)) {
-      mkdirSync(this.uploadDir, { recursive: true });
+  constructor(
+    private readonly s3Service: S3Service,
+    private readonly prisma: PrismaService,
+  ) {
+    this.tmpDir = join(process.cwd(), 'uploads', 'tmp');
+    if (!existsSync(this.tmpDir)) {
+      mkdirSync(this.tmpDir, { recursive: true });
     }
-  }
-
-  private readTagsFile(): Tag[] {
-    if (existsSync(this.tagsFile)) {
-      try {
-        const data = readFileSync(this.tagsFile, 'utf-8');
-        return JSON.parse(data) as Tag[];
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  }
-
-  private writeTagsFile(tags: Tag[]): void {
-    writeFileSync(this.tagsFile, JSON.stringify(tags, null, 2));
-  }
-
-  private readFileTagsFile(): FileTags {
-    if (existsSync(this.fileTagsFile)) {
-      try {
-        const data = readFileSync(this.fileTagsFile, 'utf-8');
-        return JSON.parse(data) as FileTags;
-      } catch {
-        return {};
-      }
-    }
-    return {};
-  }
-
-  private writeFileTagsFile(fileTags: FileTags): void {
-    writeFileSync(this.fileTagsFile, JSON.stringify(fileTags, null, 2));
-  }
-
-  private readSettingsFile(): Settings {
-    if (existsSync(this.settingsFile)) {
-      try {
-        const data = readFileSync(this.settingsFile, 'utf-8');
-        return JSON.parse(data) as Settings;
-      } catch {
-        return { STEALTH_MODE: false };
-      }
-    }
-    return { STEALTH_MODE: false };
-  }
-
-  private writeSettingsFile(settings: Settings): void {
-    writeFileSync(this.settingsFile, JSON.stringify(settings, null, 2));
-  }
-
-  private readCollectionsFile(): Collection[] {
-    if (existsSync(this.collectionsFile)) {
-      try {
-        const data = readFileSync(this.collectionsFile, 'utf-8');
-        return JSON.parse(data) as Collection[];
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  }
-
-  private writeCollectionsFile(collections: Collection[]): void {
-    writeFileSync(this.collectionsFile, JSON.stringify(collections, null, 2));
-  }
-
-  private readFileCollectionsFile(): FileCollections {
-    if (existsSync(this.fileCollectionsFile)) {
-      try {
-        const data = readFileSync(this.fileCollectionsFile, 'utf-8');
-        return JSON.parse(data) as FileCollections;
-      } catch {
-        return {};
-      }
-    }
-    return {};
-  }
-
-  private writeFileCollectionsFile(fileCollections: FileCollections): void {
-    writeFileSync(
-      this.fileCollectionsFile,
-      JSON.stringify(fileCollections, null, 2),
-    );
-  }
-
-  getCollections(): Collection[] {
-    return this.readCollectionsFile();
-  }
-
-  saveCollections(collections: Collection[]): { success: boolean } {
-    const existingCollections = this.readCollectionsFile();
-
-    if (!this.s3Service.enabled) {
-      collections.forEach((col) => {
-        const colDir = join(this.uploadDir, col.id);
-        if (!existsSync(colDir)) {
-          mkdirSync(colDir, { recursive: true });
-        }
-      });
-
-      existingCollections.forEach((oldCol) => {
-        const stillExists = collections.find((c) => c.id === oldCol.id);
-        if (!stillExists) {
-          const colDir = join(this.uploadDir, oldCol.id);
-          if (existsSync(colDir)) {
-            this.moveCollectionFilesBack(oldCol.id);
-            this.removeDir(colDir);
-          }
-        }
-      });
-    }
-
-    this.writeCollectionsFile(collections);
-    return { success: true };
-  }
-
-  private moveCollectionFilesBack(collectionId: string): void {
-    const colDir = join(this.uploadDir, collectionId);
-    if (!existsSync(colDir)) return;
-
-    const fileCollections = this.readFileCollectionsFile();
-
-    try {
-      const files = readdirSync(colDir);
-      files.forEach((file) => {
-        const oldPath = join(colDir, file);
-        const newPath = join(this.uploadDir, file);
-
-        if (existsSync(newPath)) {
-          unlinkSync(oldPath);
-        } else {
-          renameSync(oldPath, newPath);
-        }
-      });
-
-      Object.keys(fileCollections).forEach((filename) => {
-        if (fileCollections[filename] === collectionId) {
-          delete fileCollections[filename];
-        }
-      });
-      this.writeFileCollectionsFile(fileCollections);
-    } catch (err) {
-      console.error('Error moving files back:', err);
-    }
-  }
-
-  private removeDir(dir: string): void {
-    try {
-      const files = readdirSync(dir);
-      files.forEach((file) => unlinkSync(join(dir, file)));
-      rmdirSync(dir);
-    } catch (err) {
-      console.error('Error removing directory:', err);
-    }
-  }
-
-  getSettings(): Settings {
-    return this.readSettingsFile();
-  }
-
-  saveSettings(settings: Settings): { success: boolean } {
-    this.writeSettingsFile(settings);
-    return { success: true };
   }
 
   async saveFile(file: Express.Multer.File) {
@@ -243,586 +64,226 @@ export class UploadService {
     fileCounter++;
     const ext = extname(file.originalname);
     const filename = `${timestamp}-${fileCounter}${ext}`;
+    const type = getFileType(file.mimetype, filename);
+    const storageKey = `${type}/${filename}`;
 
-    const isVideoFile =
-      file.mimetype.startsWith('video/') ||
-      !!filename.match(/\.(mp4|webm|mov|avi|mkv)$/i);
+    await this.s3Service.putObject(storageKey, file.buffer, file.mimetype);
 
-    if (this.s3Service.enabled) {
-      await this.s3Service.putObject(filename, file.buffer, file.mimetype);
-    } else {
-      writeFileSync(join(this.uploadDir, filename), file.buffer);
+    const dbFile = await this.prisma.file.create({
+      data: {
+        filename,
+        originalName: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        type,
+        storageKey,
+      },
+    });
+
+    if (hasThumbnail(type)) {
+      void this.generateThumbnail(dbFile.id, storageKey, filename, type);
     }
 
-    const result = {
-      id: filename.replace(/\.[^/.]+$/, ''),
-      url: `${API_URL}/media/${filename}`,
-      thumbnailUrl: isVideoFile
-        ? `${API_URL}/media/${filename.replace(/\.[^/.]+$/, '')}.jpg`
-        : null,
-      isVideoThumbnail: false,
-      filename,
-      originalName: file.originalname,
-      mimetype: file.mimetype,
-      size: file.size,
-      tags: [],
-      collection: null,
-    };
-
-    if (isVideoFile) {
-      void this.generateThumbnail(filename, file.buffer);
-    }
-
-    return result;
-  }
-
-  async generateThumbnail(videoFilename: string, buffer?: Buffer) {
-    const thumbFilename = videoFilename.replace(/\.[^/.]+$/, '') + '.jpg';
-
-    if (this.s3Service.enabled && buffer) {
-      const tmpDir = join(this.uploadDir, 'tmp');
-      if (!existsSync(tmpDir)) {
-        mkdirSync(tmpDir, { recursive: true });
-      }
-      const tmpVideo = join(tmpDir, videoFilename);
-      const tmpThumb = join(tmpDir, thumbFilename);
-      writeFileSync(tmpVideo, buffer);
-      try {
-        const cmd = `ffmpeg -i "${tmpVideo}" -ss 00:00:01 -vframes 1 -vf "scale=320:-1" "${tmpThumb}" -y`;
-        await execAsync(cmd);
-        const thumbBuffer = readFileSync(tmpThumb);
-        await this.s3Service.putObject(
-          thumbFilename,
-          thumbBuffer,
-          'image/jpeg',
-        );
-        console.log('Thumbnail generated on S3:', thumbFilename);
-      } catch (err) {
-        console.error('Thumbnail error:', err);
-      } finally {
-        if (existsSync(tmpVideo)) unlinkSync(tmpVideo);
-        if (existsSync(tmpThumb)) unlinkSync(tmpThumb);
-      }
-    } else {
-      const videoPath = join(this.uploadDir, videoFilename);
-      const thumbPath = join(this.uploadDir, thumbFilename);
-      try {
-        const cmd = `ffmpeg -i "${videoPath}" -ss 00:00:01 -vframes 1 -vf "scale=320:-1" "${thumbPath}" -y`;
-        await execAsync(cmd);
-        console.log('Thumbnail generated:', thumbFilename);
-      } catch (err) {
-        console.error('Thumbnail error:', err);
-      }
-    }
+    return this.toMediaItem(dbFile, null, []);
   }
 
   async getAllFiles() {
-    if (this.s3Service.enabled) {
-      return this.getAllFilesS3();
-    }
-
-    if (!existsSync(this.uploadDir)) {
-      return [];
-    }
-
-    const fileTags = this.readFileTagsFile();
-    const fileCollections = this.readFileCollectionsFile();
-    const allFiles: string[] = [];
-
-    const rootFiles = readdirSync(this.uploadDir).filter((f) => {
-      const stat = statSync(join(this.uploadDir, f));
-      return stat.isFile() && !f.endsWith('.json');
-    });
-    allFiles.push(...rootFiles);
-
-    const subdirs = readdirSync(this.uploadDir).filter((f) => {
-      const stat = statSync(join(this.uploadDir, f));
-      return (
-        stat.isDirectory() &&
-        ![
-          'tags.json',
-          'file-tags.json',
-          'settings.json',
-          'collections.json',
-          'file-collections.json',
-        ].includes(f)
-      );
+    const files = await this.prisma.file.findMany({
+      include: {
+        tags: { include: { tag: true } },
+        collections: { include: { collection: true } },
+      },
+      orderBy: { createdAt: 'desc' },
     });
 
-    subdirs.forEach((subdir) => {
-      const subFiles = readdirSync(join(this.uploadDir, subdir)).filter(
-        (f) => !f.endsWith('.json'),
-      );
-      allFiles.push(...subFiles);
+    return files.map((f) => {
+      const tags = f.tags.map((ft) => ft.tag.name);
+      const collection = f.collections[0]?.collection ?? null;
+      return this.toMediaItem(f, collection, tags);
     });
-
-    return allFiles
-      .map((filename) => {
-        let collectionId: string | null = fileCollections[filename] || null;
-        if (!collectionId) {
-          const parentDir = readdirSync(this.uploadDir).find((d) => {
-            try {
-              return statSync(join(this.uploadDir, d, filename)).isFile();
-            } catch {
-              return false;
-            }
-          });
-          collectionId =
-            parentDir &&
-            ![
-              'tags.json',
-              'file-tags.json',
-              'settings.json',
-              'collections.json',
-              'file-collections.json',
-            ].includes(parentDir)
-              ? parentDir
-              : null;
-        }
-
-        const filePath = collectionId
-          ? join(this.uploadDir, collectionId, filename)
-          : join(this.uploadDir, filename);
-
-        if (!existsSync(filePath)) {
-          return null;
-        }
-
-        const stats = statSync(filePath);
-        const namePart = filename.substring(filename.indexOf('-') + 1);
-        const originalName = namePart.includes('-')
-          ? namePart.substring(namePart.indexOf('-') + 1)
-          : namePart;
-
-        const isVideo = !!filename.match(/\.(mp4|webm|mov|avi|mkv)$/i);
-        const thumbFilename = isVideo
-          ? filename.replace(/\.[^/.]+$/, '') + '.jpg'
-          : null;
-
-        const thumbFileExists =
-          thumbFilename &&
-          (collectionId
-            ? existsSync(join(this.uploadDir, collectionId, thumbFilename))
-            : existsSync(join(this.uploadDir, thumbFilename)));
-        const finalThumbUrl = thumbFileExists
-          ? collectionId
-            ? `${API_URL}/media/${collectionId}/${thumbFilename}`
-            : `${API_URL}/media/${thumbFilename}`
-          : null;
-
-        return {
-          id: filename.replace(/\.[^/.]+$/, ''),
-          url: collectionId
-            ? `${API_URL}/media/${collectionId}/${filename}`
-            : `${API_URL}/media/${filename}`,
-          thumbnailUrl: finalThumbUrl,
-          isVideoThumbnail: false,
-          filename,
-          originalName: originalName || filename,
-          mimetype: this.getMimeType(filename),
-          size: stats.size,
-          createdAt: stats.birthtime,
-          tags: fileTags[filename] || [],
-          collection: collectionId,
-        };
-      })
-      .filter((f): f is NonNullable<typeof f> => f !== null)
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
-  }
-
-  private async getAllFilesS3() {
-    const objects = await this.s3Service.listObjects();
-    const fileTags = this.readFileTagsFile();
-
-    const mediaObjects = objects.filter(
-      (o) => !o.key.endsWith('.json') && !o.key.startsWith('tmp/'),
-    );
-
-    return mediaObjects
-      .map((obj) => {
-        const parts = obj.key.split('/');
-        const filename = parts.length > 1 ? parts[1] : parts[0];
-        const collectionId = parts.length > 1 ? parts[0] : null;
-
-        const isVideo = !!filename.match(/\.(mp4|webm|mov|avi|mkv)$/i);
-        const thumbFilename = isVideo
-          ? filename.replace(/\.[^/.]+$/, '') + '.jpg'
-          : null;
-        const thumbKey = collectionId
-          ? `${collectionId}/${thumbFilename}`
-          : thumbFilename;
-        const thumbExists =
-          thumbFilename && mediaObjects.some((o) => o.key === thumbKey);
-
-        const namePart = filename.substring(filename.indexOf('-') + 1);
-        const originalName = namePart.includes('-')
-          ? namePart.substring(namePart.indexOf('-') + 1)
-          : namePart;
-
-        return {
-          id: filename.replace(/\.[^/.]+$/, ''),
-          url: collectionId
-            ? `${API_URL}/media/${collectionId}/${filename}`
-            : `${API_URL}/media/${filename}`,
-          thumbnailUrl: thumbExists
-            ? collectionId
-              ? `${API_URL}/media/${collectionId}/${thumbFilename}`
-              : `${API_URL}/media/${thumbFilename}`
-            : null,
-          isVideoThumbnail: false,
-          filename,
-          originalName: originalName || filename,
-          mimetype: this.getMimeType(filename),
-          size: obj.size,
-          createdAt: obj.lastModified,
-          tags: fileTags[filename] || [],
-          collection: collectionId,
-        };
-      })
-      .filter((f): f is NonNullable<typeof f> => f !== null)
-      .sort(
-        (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-      );
   }
 
   async deleteFile(filename: string): Promise<boolean> {
-    if (this.s3Service.enabled) {
-      return this.deleteFileS3(filename);
-    }
+    const file = await this.prisma.file.findUnique({ where: { filename } });
+    if (!file) return false;
 
-    try {
-      const filePath = join(this.uploadDir, filename);
-      if (existsSync(filePath)) {
-        unlinkSync(filePath);
+    const keysToDelete = [file.storageKey];
+    if (file.thumbnailKey) keysToDelete.push(file.thumbnailKey);
 
-        const fileTags = this.readFileTagsFile();
-        if (fileTags[filename]) {
-          const tags = this.readTagsFile();
-          const deletedTags = fileTags[filename];
+    await this.s3Service.deleteObjects(keysToDelete);
+    await this.prisma.file.delete({ where: { id: file.id } });
 
-          deletedTags.forEach((tagName) => {
-            const tag = tags.find((t) => t.name === tagName);
-            if (tag && tag.count > 0) {
-              tag.count--;
-            }
-          });
-          this.writeTagsFile(tags);
-
-          delete fileTags[filename];
-          this.writeFileTagsFile(fileTags);
-        }
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
+    return true;
   }
 
-  private async deleteFileS3(filename: string): Promise<boolean> {
+  async generateThumbnail(fileId: string, storageKey: string, filename: string, type: string) {
     const thumbFilename = filename.replace(/\.[^/.]+$/, '') + '.jpg';
+    const thumbKey = `${thumbDir(type)}/${thumbFilename}`;
+    const tmpFile = join(this.tmpDir, filename);
+    const tmpThumb = join(this.tmpDir, thumbFilename);
 
     try {
-      const keysToDelete = [filename, thumbFilename];
-      const fileCollections = this.readFileCollectionsFile();
-      const collectionId = fileCollections[filename];
-      if (collectionId) {
-        keysToDelete.push(`${collectionId}/${filename}`);
-        keysToDelete.push(`${collectionId}/${thumbFilename}`);
-      }
+      const stream = await this.s3Service.getObjectStream(storageKey);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) chunks.push(chunk);
+      writeFileSync(tmpFile, Buffer.concat(chunks));
 
-      await this.s3Service.deleteObjects(keysToDelete);
+      const cmd = `ffmpeg -i "${tmpFile}" -ss 00:00:01 -vframes 1 -vf "scale=320:-1" "${tmpThumb}" -y`;
+      await execAsync(cmd);
 
-      const fileTags = this.readFileTagsFile();
-      if (fileTags[filename]) {
-        const tags = this.readTagsFile();
-        const deletedTags = fileTags[filename];
+      const thumbBuffer = readFileSync(tmpThumb);
+      await this.s3Service.putObject(thumbKey, thumbBuffer, 'image/jpeg');
 
-        deletedTags.forEach((tagName) => {
-          const tag = tags.find((t) => t.name === tagName);
-          if (tag && tag.count > 0) {
-            tag.count--;
-          }
-        });
-        this.writeTagsFile(tags);
+      await this.prisma.file.update({
+        where: { id: fileId },
+        data: { thumbnailKey: thumbKey },
+      });
 
-        delete fileTags[filename];
-        this.writeFileTagsFile(fileTags);
-      }
-
-      return true;
-    } catch {
-      return false;
+      console.log('Thumbnail generated:', thumbKey);
+    } catch (err) {
+      console.error('Thumbnail error:', err);
+    } finally {
+      if (existsSync(tmpFile)) unlinkSync(tmpFile);
+      if (existsSync(tmpThumb)) unlinkSync(tmpThumb);
     }
   }
 
-  getTags(): Tag[] {
-    return this.readTagsFile();
+  async getTags() {
+    return this.prisma.tag.findMany({ orderBy: { name: 'asc' } });
   }
 
-  saveTags(tags: Tag[]): { success: boolean } {
-    this.writeTagsFile(tags);
+  async saveTags(tags: { id: string; name: string; color: string; count: number }[]) {
+    for (const tag of tags) {
+      await this.prisma.tag.upsert({
+        where: { id: tag.id },
+        update: { name: tag.name, color: tag.color, count: tag.count },
+        create: { id: tag.id, name: tag.name, color: tag.color, count: tag.count },
+      });
+    }
     return { success: true };
   }
 
-  updateFileTags(filename: string, newTags: string[]): { success: boolean } {
-    try {
-      const fileTags = this.readFileTagsFile();
-      const oldTags = fileTags[filename] || [];
+  async updateFileTags(filename: string, newTagNames: string[]) {
+    const file = await this.prisma.file.findUnique({ where: { filename } });
+    if (!file) return { success: false };
 
-      const tags = this.readTagsFile();
+    await this.prisma.fileTag.deleteMany({ where: { fileId: file.id } });
 
-      oldTags.forEach((tagName) => {
-        const tag = tags.find((t) => t.name === tagName);
-        if (tag && tag.count > 0) {
-          tag.count--;
-        }
+    for (const name of newTagNames) {
+      let tag = await this.prisma.tag.findUnique({ where: { name } });
+      if (!tag) {
+        tag = await this.prisma.tag.create({
+          data: { name, color: '#888888' },
+        });
+      }
+      await this.prisma.fileTag.create({
+        data: { fileId: file.id, tagId: tag.id },
       });
+    }
 
-      newTags.forEach((tagName) => {
-        let tag = tags.find((t) => t.name === tagName);
-        if (!tag) {
-          tag = {
-            id: Date.now().toString(),
-            name: tagName,
-            color: '#888888',
-            count: 0,
-          };
-          tags.push(tag);
-        }
-        tag.count++;
-      });
+    await this.recalcTagCounts();
+    return { success: true };
+  }
 
-      this.writeTagsFile(tags);
-      fileTags[filename] = newTags;
-      this.writeFileTagsFile(fileTags);
-
-      return { success: true };
-    } catch {
-      return { success: false };
+  private async recalcTagCounts() {
+    const tags = await this.prisma.tag.findMany({
+      include: { files: true },
+    });
+    for (const tag of tags) {
+      if (tag.files.length !== tag.count) {
+        await this.prisma.tag.update({
+          where: { id: tag.id },
+          data: { count: tag.files.length },
+        });
+      }
     }
   }
 
-  private getMimeType(filename: string): string {
-    const ext = filename.split('.').pop()?.toLowerCase();
-    const mimeTypes: Record<string, string> = {
-      jpg: 'image/jpeg',
-      jpeg: 'image/jpeg',
-      png: 'image/png',
-      gif: 'image/gif',
-      webp: 'image/webp',
-      mov: 'video/quicktime',
-      svg: 'image/svg+xml',
-      bmp: 'image/bmp',
-      pdf: 'application/pdf',
-      doc: 'application/msword',
-      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      xls: 'application/vnd.ms-excel',
-      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      ppt: 'application/vnd.ms-powerpoint',
-      pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      zip: 'application/zip',
-      rar: 'application/x-rar-compressed',
-      '7z': 'application/x-7z-compressed',
-      txt: 'text/plain',
-      json: 'application/json',
-      xml: 'application/xml',
-      html: 'text/html',
-      css: 'text/css',
-      js: 'application/javascript',
-      ts: 'application/typescript',
-      mp3: 'audio/mpeg',
-      wav: 'audio/wav',
-      mp4: 'video/mp4',
-      webm: 'video/webm',
-      avi: 'video/x-msvideo',
-      mkv: 'video/x-matroska',
-    };
-    return mimeTypes[ext || ''] || 'application/octet-stream';
+  async getCollections() {
+    const collections = await this.prisma.collection.findMany({
+      include: { files: true },
+      orderBy: { name: 'asc' },
+    });
+    return collections.map((c) => ({
+      id: c.id,
+      name: c.name,
+      color: c.color,
+      count: c.files.length,
+    }));
   }
 
-  private getThumbnailFilename(filename: string): string {
-    return filename.replace(/\.[^/.]+$/, '') + '.jpg';
-  }
+  async saveCollections(collections: { id: string; name: string; color: string }[]) {
+    const existingIds = new Set(collections.map((c) => c.id));
+    const allExisting = await this.prisma.collection.findMany();
+    const toRemove = allExisting.filter((c) => !existingIds.has(c.id));
 
-  async updateFileCollection(
-    filename: string,
-    collectionId: string | null,
-  ): Promise<{ success: boolean }> {
-    try {
-      const fileCollections = this.readFileCollectionsFile();
-      const currentCollection = fileCollections[filename] || null;
-      const thumbFilename = this.getThumbnailFilename(filename);
-
-      if (this.s3Service.enabled) {
-        return this.updateFileCollectionS3(
-          filename,
-          collectionId,
-          currentCollection,
-          thumbFilename,
-          fileCollections,
-        );
-      }
-
-      if (collectionId) {
-        const sourcePath = join(
-          this.uploadDir,
-          currentCollection || '',
-          filename,
-        );
-        const sourceThumbPath = join(
-          this.uploadDir,
-          currentCollection || '',
-          thumbFilename,
-        );
-        const targetDir = join(this.uploadDir, collectionId);
-
-        if (!existsSync(targetDir)) {
-          mkdirSync(targetDir, { recursive: true });
-        }
-
-        const targetPath = join(targetDir, filename);
-        const targetThumbPath = join(targetDir, thumbFilename);
-
-        if (existsSync(sourcePath) && sourcePath !== targetPath) {
-          renameSync(sourcePath, targetPath);
-
-          if (existsSync(sourceThumbPath)) {
-            renameSync(sourceThumbPath, targetThumbPath);
-          }
-
-          if (currentCollection) {
-            const oldDir = join(this.uploadDir, currentCollection);
-            if (existsSync(oldDir)) {
-              const files = readdirSync(oldDir);
-              if (files.length === 0) {
-                rmdirSync(oldDir);
-              }
-            }
-          }
-        }
-
-        fileCollections[filename] = collectionId;
-      } else if (currentCollection) {
-        const sourcePath = join(this.uploadDir, currentCollection, filename);
-        const sourceThumbPath = join(
-          this.uploadDir,
-          currentCollection,
-          thumbFilename,
-        );
-        const targetPath = join(this.uploadDir, filename);
-        const targetThumbPath = join(this.uploadDir, thumbFilename);
-
-        if (existsSync(sourcePath)) {
-          renameSync(sourcePath, targetPath);
-
-          if (existsSync(sourceThumbPath)) {
-            renameSync(sourceThumbPath, targetThumbPath);
-          }
-
-          const oldDir = join(this.uploadDir, currentCollection);
-          if (existsSync(oldDir)) {
-            const files = readdirSync(oldDir);
-            if (files.length === 0) {
-              rmdirSync(oldDir);
-            }
-          }
-        }
-
-        delete fileCollections[filename];
-      }
-
-      this.writeFileCollectionsFile(fileCollections);
-      return { success: true };
-    } catch (err) {
-      console.error('Error updating file collection:', err);
-      return { success: false };
+    for (const col of toRemove) {
+      await this.prisma.collection.delete({ where: { id: col.id } });
     }
+
+    for (const col of collections) {
+      await this.prisma.collection.upsert({
+        where: { id: col.id },
+        update: { name: col.name, color: col.color },
+        create: { id: col.id, name: col.name, color: col.color },
+      });
+    }
+
+    return { success: true };
   }
 
-  private async updateFileCollectionS3(
-    filename: string,
-    collectionId: string | null,
-    currentCollection: string | null,
-    thumbFilename: string,
-    fileCollections: FileCollections,
-  ): Promise<{ success: boolean }> {
-    const sourceKey = currentCollection
-      ? `${currentCollection}/${filename}`
-      : filename;
-    const sourceThumbKey = currentCollection
-      ? `${currentCollection}/${thumbFilename}`
-      : thumbFilename;
+  async updateFileCollection(filename: string, collectionId: string | null) {
+    const file = await this.prisma.file.findUnique({ where: { filename } });
+    if (!file) return { success: false };
+
+    await this.prisma.fileCollection.deleteMany({ where: { fileId: file.id } });
 
     if (collectionId) {
-      const targetKey = `${collectionId}/${filename}`;
-      const targetThumbKey = `${collectionId}/${thumbFilename}`;
+      const col = await this.prisma.collection.findUnique({ where: { id: collectionId } });
+      if (!col) return { success: false };
 
-      if (sourceKey !== targetKey) {
-        await this.s3Service.copyObject(sourceKey, targetKey);
-
-        if (await this.s3Service.exists(sourceThumbKey)) {
-          await this.s3Service.copyObject(sourceThumbKey, targetThumbKey);
-        }
-
-        fileCollections[filename] = collectionId;
-        this.writeFileCollectionsFile(fileCollections);
-
-        await this.s3Service.deleteObject(sourceKey).catch(() => {});
-        if (await this.s3Service.exists(sourceThumbKey)) {
-          await this.s3Service.deleteObject(sourceThumbKey).catch(() => {});
-        }
-      } else {
-        fileCollections[filename] = collectionId;
-        this.writeFileCollectionsFile(fileCollections);
-      }
-    } else if (currentCollection) {
-      await this.s3Service.copyObject(sourceKey, filename);
-
-      if (await this.s3Service.exists(sourceThumbKey)) {
-        await this.s3Service.copyObject(sourceThumbKey, thumbFilename);
-      }
-
-      delete fileCollections[filename];
-      this.writeFileCollectionsFile(fileCollections);
-
-      await this.s3Service.deleteObject(sourceKey).catch(() => {});
-      if (await this.s3Service.exists(sourceThumbKey)) {
-        await this.s3Service.deleteObject(sourceThumbKey).catch(() => {});
-      }
-    } else {
-      this.writeFileCollectionsFile(fileCollections);
+      await this.prisma.fileCollection.create({
+        data: { fileId: file.id, collectionId },
+      });
     }
 
     return { success: true };
   }
 
-  private computeHash(filename: string): string {
-    try {
-      const filePath = join(this.uploadDir, filename);
-      if (!existsSync(filePath)) {
-        return `${filename}-deleted`;
-      }
-      const stat = statSync(filePath);
-      return `${filename}-${stat.size}-${stat.mtimeMs}`;
-    } catch {
-      return `${filename}-missing`;
+  async getSettings() {
+    let settings = await this.prisma.settings.findUnique({ where: { id: 'singleton' } });
+    if (!settings) {
+      settings = await this.prisma.settings.create({
+        data: { id: 'singleton', data: { STEALTH_MODE: false } },
+      });
+    }
+    return settings.data as unknown as { STEALTH_MODE: boolean };
+  }
+
+  async saveSettings(data: { STEALTH_MODE: boolean }) {
+    const jsonData = data as unknown as Prisma.InputJsonValue;
+    await this.prisma.settings.upsert({
+      where: { id: 'singleton' },
+      update: { data: jsonData },
+      create: { id: 'singleton', data: jsonData },
+    });
+    return { success: true };
+  }
+
+  async regenerateThumbnailByFilename(filename: string) {
+    const file = await this.prisma.file.findUnique({ where: { filename } });
+    if (file && hasThumbnail(file.type)) {
+      await this.generateThumbnail(file.id, file.storageKey, file.filename, file.type);
     }
   }
 
   async getSyncData() {
-    const allFiles = await this.getAllFiles();
-    const files = allFiles.filter((f) => {
-      if (this.s3Service.enabled) return true;
-      const filePath = join(this.uploadDir, f.filename);
-      return existsSync(filePath);
+    const files = await this.prisma.file.findMany({
+      include: {
+        tags: { include: { tag: true } },
+        collections: { include: { collection: true } },
+      },
     });
-    const fileTags = this.readFileTagsFile();
-    const fileCollections = this.readFileCollectionsFile();
 
     return {
       files: files.map((f) => ({
@@ -830,40 +291,66 @@ export class UploadService {
         originalName: f.originalName,
         mimetype: f.mimetype,
         size: f.size,
-        tags: fileTags[f.filename] || [],
-        collection: fileCollections[f.filename] || null,
-        hash: this.computeHash(f.filename),
+        tags: f.tags.map((ft) => ft.tag.name),
+        collection: f.collections[0]?.collection?.id ?? null,
+        hash: `${f.filename}-${f.size}-${f.updatedAt.getTime()}`,
       })),
-      tags: this.getTags(),
-      collections: this.readCollectionsFile(),
+      tags: await this.prisma.tag.findMany(),
+      collections: (await this.prisma.collection.findMany({
+        include: { files: true },
+      })).map((c) => ({ ...c, count: c.files.length })),
     };
   }
 
   async syncFiles(
-    syncData: {
-      filename: string;
-      originalName: string;
-      mimetype: string;
-      size: number;
-      tags?: string[];
-      collection?: string | null;
-      hash: string;
-    }[],
+    syncData: { filename: string; hash: string; tags?: string[]; collection?: string | null }[],
   ) {
-    const existingFiles = await this.getAllFiles();
-    const existingHashes = new Map(
-      existingFiles.map((f) => [f.filename, this.computeHash(f.filename)]),
-    );
+    const existing = await this.prisma.file.findMany();
+    const existingMap = new Map(existing.map((f) => [f.filename, f]));
+
     const result = { added: [] as string[], updated: [] as string[] };
 
-    for (const file of syncData) {
-      if (!existingHashes.has(file.filename)) {
-        result.added.push(file.filename);
-      } else if (existingHashes.get(file.filename) !== file.hash) {
-        result.updated.push(file.filename);
+    for (const item of syncData) {
+      const existingFile = existingMap.get(item.filename);
+      const currentHash = existingFile
+        ? `${existingFile.filename}-${existingFile.size}-${existingFile.updatedAt.getTime()}`
+        : null;
+
+      if (!existingFile) {
+        result.added.push(item.filename);
+      } else if (currentHash !== item.hash) {
+        result.updated.push(item.filename);
       }
     }
 
     return result;
+  }
+
+  private toMediaItem(
+    file: { id: string; filename: string; originalName: string; mimetype: string; size: number; type: string; storageKey: string; thumbnailKey: string | null; createdAt: Date },
+    collection: { id: string; name: string } | null,
+    tags: string[],
+  ) {
+    const namePart = file.filename.substring(file.filename.indexOf('-') + 1);
+    const originalName = namePart.includes('-')
+      ? namePart.substring(namePart.indexOf('-') + 1)
+      : namePart;
+
+    return {
+      id: file.id,
+      url: `${API_URL}/media/${file.storageKey}`,
+      thumbnailUrl: file.thumbnailKey
+        ? `${API_URL}/media/${file.thumbnailKey}`
+        : null,
+      isVideoThumbnail: false,
+      filename: file.filename,
+      originalName: originalName || file.filename,
+      mimetype: file.mimetype,
+      size: file.size,
+      tags,
+      collection: collection?.id ?? null,
+      collectionName: collection?.name ?? null,
+      createdAt: file.createdAt.toISOString(),
+    };
   }
 }

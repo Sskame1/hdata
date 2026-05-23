@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model File {
+  id           String   @id @default(cuid())
+  filename     String   @unique
+  originalName String
+  mimetype     String
+  size         Int
+  type         String
+  storageKey   String   @unique
+  thumbnailKey String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tags        FileTag[]
+  collections FileCollection[]
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  color     String   @default("#888888")
+  count     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  files FileTag[]
+}
+
+model Collection {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  color     String   @default("#9b5de5")
+  createdAt DateTime @default(now())
+
+  files FileCollection[]
+}
+
+model FileTag {
+  fileId String
+  tagId  String
+  file   File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([fileId, tagId])
+}
+
+model FileCollection {
+  fileId       String
+  collectionId String
+  file         File       @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@id([fileId, collectionId])
+}
+
+model Settings {
+  id   String @id @default("singleton")
+  data Json   @default("{}")
+}

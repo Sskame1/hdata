@@ -1,18 +1,32 @@
 @import "tailwindcss";
 
+@theme {
+  --color-rose: #f15bb5;
+  --color-rose-light: #ff8cba;
+  --color-mauve: #c084fc;
+  --color-mauve-light: #d8b4fe;
+  --color-surface: #15101a;
+  --color-card: #1d1625;
+  --color-hover: #241530;
+  --color-border: #3a2035;
+  --color-text: #f0e0ea;
+  --color-muted: #b09aaa;
+  --color-dim: #7a6a74;
+  --color-dark: #0d0a12;
+}
+
 :root {
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-tertiary: #1a1a25;
-  --bg-card: #15151f;
-  --accent-cyan: #00f5d4;
-  --accent-purple: #9b5de5;
-  --accent-pink: #f15bb5;
-  --accent-yellow: #fee440;
-  --text-primary: #e0e0e0;
-  --text-secondary: #8a8a9a;
-  --text-muted: #5a5a6a;
-  --border-color: #2a2a3a;
+  --bg-primary: #0d0a12;
+  --bg-secondary: #15101a;
+  --bg-tertiary: #1d1625;
+  --bg-card: #1d1625;
+  --accent: #f15bb5;
+  --accent-light: #ff8cba;
+  --secondary: #c084fc;
+  --text-primary: #f0e0ea;
+  --text-secondary: #b09aaa;
+  --text-muted: #7a6a74;
+  --border-color: #3a2035;
 }
 
 * {
@@ -45,12 +59,12 @@ input[type="file"] {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-purple);
+  background: var(--secondary);
 }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 5px var(--accent-cyan), 0 0 10px var(--accent-cyan); }
-  50% { box-shadow: 0 0 15px var(--accent-cyan), 0 0 25px var(--accent-cyan); }
+  0%, 100% { box-shadow: 0 0 5px var(--accent), 0 0 10px var(--accent); }
+  50% { box-shadow: 0 0 15px var(--accent), 0 0 25px var(--accent); }
 }
 
 @keyframes glitch {
@@ -63,13 +77,13 @@ input[type="file"] {
 }
 
 .glass-dark {
-  background: rgba(18, 18, 26, 0.8);
+  background: rgba(21, 16, 26, 0.8);
   backdrop-filter: blur(12px);
   border: 1px solid var(--border-color);
 }
 
-.cyan-glow {
-  box-shadow: 0 0 10px rgba(0, 245, 212, 0.3);
+.accent-glow {
+  box-shadow: 0 0 10px rgba(241, 91, 181, 0.3);
 }
 
 .glitch-text:hover {

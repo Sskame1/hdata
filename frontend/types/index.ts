@@ -24,11 +24,13 @@ export interface Collection {
   id: string;
   name: string;
   color: string;
+  count: number;
 }
 
 export interface SearchOptions {
   query: string;
   tags: string[];
+  excludeTags: string[];
   tagMode: 'AND' | 'OR';
   dateFrom?: string;
   dateTo?: string;

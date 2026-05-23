@@ -1,0 +1,7 @@
+{
+  "name": "cleaner",
+  "version": "1.0.0",
+  "description": "Delete image files in a folder",
+  "type": "module",
+  "main": "index.js"
+}

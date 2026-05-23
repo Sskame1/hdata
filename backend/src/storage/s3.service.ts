@@ -89,12 +89,13 @@ export class S3Service {
     );
   }
 
-  async getObjectStream(key: string): Promise<Readable> {
+  async getObjectStream(key: string, range?: string): Promise<Readable> {
     if (!this.client) throw new NotFoundException('S3 not configured');
     const response = await this.client.send(
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
+        ...(range ? { Range: range } : {}),
       }),
     );
     return response.Body as Readable;
@@ -127,17 +128,28 @@ export class S3Service {
     prefix?: string,
   ): Promise<{ key: string; size: number; lastModified: Date }[]> {
     if (!this.client) return [];
-    const response = await this.client.send(
-      new ListObjectsV2Command({
-        Bucket: this.bucket,
-        Prefix: prefix,
-      }),
-    );
-    return (response.Contents || []).map((item) => ({
-      key: item.Key || '',
-      size: item.Size || 0,
-      lastModified: item.LastModified || new Date(),
-    }));
+    const allObjects: { key: string; size: number; lastModified: Date }[] = [];
+    let token: string | undefined;
+    do {
+      const response = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: token,
+        }),
+      );
+      if (response.Contents) {
+        for (const item of response.Contents) {
+          allObjects.push({
+            key: item.Key || '',
+            size: item.Size || 0,
+            lastModified: item.LastModified || new Date(),
+          });
+        }
+      }
+      token = response.NextContinuationToken;
+    } while (token);
+    return allObjects;
   }
 
   async exists(key: string): Promise<boolean> {

@@ -1,15 +1,35 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    volumes:
+      - D:/hdata/postgres:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=hdata
+      - POSTGRES_PASSWORD=hdata
+      - POSTGRES_DB=hdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hdata"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
       - "3001:3001"
-    volumes:
-      - uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     environment:
       - NODE_ENV=production
       - API_URL=
+      - DATABASE_URL=postgresql://hdata:hdata@postgres:5432/hdata
       - S3_ENDPOINT=http://minio:9000
       - S3_REGION=us-east-1
       - S3_ACCESS_KEY=admin
@@ -24,7 +44,6 @@ services:
       - "80:80"
     depends_on:
       - backend
-      - minio
 
   minio:
     image: minio/minio:latest
@@ -55,5 +74,4 @@ services:
         echo 'Bucket hdata created';
       "
 
-volumes:
-  uploads:
+

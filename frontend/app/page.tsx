@@ -30,6 +30,7 @@ export default function Home() {
     clearSelection,
     handleBatchDelete,
     handleBatchCollection,
+    handleBatchTags,
     setShowMobileMenu,
     setShowSettings,
     setShowBlur,
@@ -39,6 +40,8 @@ export default function Home() {
     updateTag,
     addNewCollection,
     deleteCollection,
+    handleReorderTags,
+    handleReorderCollections,
     addTagToItem,
     removeTagFromItem,
     addToCollection,
@@ -47,7 +50,7 @@ export default function Home() {
   } = useMedia();
 
   return (
-    <div className="flex flex-col md:grid md:grid-cols-[88px_1fr] h-screen">
+    <div className="flex flex-col md:grid md:grid-cols-[120px_1fr] h-screen">
       <div className="hidden md:flex">
         <SidePanel
           activeFilter={activeFilter}
@@ -56,12 +59,12 @@ export default function Home() {
         />
       </div>
       <div className="flex flex-col h-full overflow-hidden z-0">
-        <div className="md:hidden flex items-center justify-between px-2 py-2 bg-[#12121a] border-b border-[#2a2a3a] relative z-40">
-          <span className="text-base font-bold text-[#00f5d4]">HDATA</span>
+        <div className="md:hidden flex items-center justify-between px-2 py-2 bg-surface border-b border-border relative z-40">
+          <span className="text-base font-bold text-rose">HDATA</span>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setShowMobileMenu(!showMobileMenu)}
-              className="p-2 text-[#8a8a9a]"
+              className="p-2 text-muted"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -69,7 +72,7 @@ export default function Home() {
             </button>
             <button
               onClick={() => setShowSettings(true)}
-              className="p-2 text-[#8a8a9a]"
+              className="p-2 text-muted"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.804 2.885 2.165a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.804 3.31-2.165 2.885a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.804-2.885-2.165a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.804-3.31 2.165-2.885a1.724 1.724 0 002.572-1.065z" />
@@ -102,6 +105,7 @@ export default function Home() {
           onClearSelection={clearSelection}
           onBatchDelete={handleBatchDelete}
           onBatchCollection={handleBatchCollection}
+          onBatchTags={handleBatchTags}
           collections={collections}
         />
       </div>
@@ -133,6 +137,8 @@ export default function Home() {
         collections={collections}
         onAddCollection={addNewCollection}
         onDeleteCollection={deleteCollection}
+        onReorderTags={handleReorderTags}
+        onReorderCollections={handleReorderCollections}
       />
     </div>
   );

@@ -15,7 +15,7 @@ export function filterMediaItems(
           (v) =>
             v.filename.replace(/\.[^/.]+$/, "") ===
               i.filename.replace(/\.[^/.]+$/, "") &&
-            /\.(mp4|webm|mov|avi|mkv|m4v)$/i.test(v.filename),
+            /\.(mp4|webm|mov|avi|mkv|m4v|ts)$/i.test(v.filename),
         ),
     );
   }
@@ -26,6 +26,12 @@ export function filterMediaItems(
       (item) =>
         item.originalName.toLowerCase().includes(q) ||
         item.filename.toLowerCase().includes(q),
+    );
+  }
+
+  if (options.excludeTags.length > 0) {
+    filtered = filtered.filter(
+      (item) => !options.excludeTags.some((tag) => item.tags?.includes(tag)),
     );
   }
 
@@ -89,14 +95,19 @@ export function filterMediaItems(
           (i) =>
             i.filename.replace(/\.[^/.]+$/, "") ===
               item.filename.replace(/\.[^/.]+$/, "") &&
-            /\.(mp4|webm|mov|avi|mkv|m4v)$/i.test(i.filename),
+            /\.(mp4|webm|mov|avi|mkv|m4v|ts)$/i.test(i.filename),
         );
         return item.mimetype.startsWith("image/") && !hasVideoSibling;
       });
       break;
     case "videos":
       filtered = items.filter((item) =>
-        /\.(mp4|webm|mov|avi|mkv|m4v)$/i.test(item.filename),
+        /\.(mp4|webm|mov|avi|mkv|m4v|ts)$/i.test(item.filename),
+      );
+      break;
+    case "gifs":
+      filtered = filtered.filter((item) =>
+        /\.gif$/i.test(item.filename),
       );
       break;
     case "docs":

@@ -21,15 +21,15 @@ export const MobileMenu = ({
   };
 
   return (
-    <div className="md:hidden fixed top-10 left-0 right-0 bg-[#12121a] border-b border-[#2a2a3a] z-[300] max-h-48 overflow-y-auto shadow-lg">
-      {["all", "images", "videos", "documents"].map((id) => (
+    <div className="md:hidden fixed top-10 left-0 right-0 bg-surface border-b border-border z-[300] max-h-48 overflow-y-auto shadow-lg">
+      {["all", "images", "videos", "gifs", "documents"].map((id) => (
         <button
           key={id}
           onClick={() => handleClick(id)}
           className={`w-full px-4 py-2 text-left text-sm font-mono ${
             activeFilter === id
-              ? "text-[#00f5d4] bg-[#00f5d4]/10"
-              : "text-[#8a8a9a]"
+              ? "text-rose bg-rose/10"
+              : "text-muted"
           }`}
         >
           {id === "all"
@@ -38,7 +38,9 @@ export const MobileMenu = ({
               ? "IMAGES"
               : id === "videos"
                 ? "VIDEOS"
-                : "DOCUMENTS"}
+                : id === "gifs"
+                  ? "GIFS"
+                  : "DOCUMENTS"}
         </button>
       ))}
       {collections.map((col) => (
@@ -47,8 +49,8 @@ export const MobileMenu = ({
           onClick={() => handleClick(`collection:${col.id}`)}
           className={`w-full px-4 py-2 text-left text-sm font-mono flex items-center gap-2 ${
             activeFilter === `collection:${col.id}`
-              ? "text-[#9b5de5] bg-[#9b5de5]/10"
-              : "text-[#8a8a9a]"
+              ? "text-mauve bg-mauve/10"
+              : "text-muted"
           }`}
         >
           <div

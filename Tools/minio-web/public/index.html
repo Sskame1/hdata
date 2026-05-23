@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MinIO Manager</title>
+<script>
+const API = "";
+
+let allFiles = [];
+let filteredFiles = [];
+let selection = new Set();
+let stats = null;
+
+async function api(path, opts = {}) {
+  const r = await fetch(API + path, {
+    headers: { "Content-Type": "application/json" },
+    ...opts,
+  });
+  if (!r.ok) throw new Error((await r.json()).error);
+  return r.json();
+}
+
+function fmtSize(bytes) {
+  if (!bytes) return "0 B";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+  if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + " MB";
+  return (bytes / 1073741824).toFixed(2) + " GB";
+}
+
+function fmtDate(d) {
+  return new Date(d).toLocaleString();
+}
+
+function isImage(ext) {
+  return ["jpg", "jpeg", "png", "gif", "webp"].includes(ext);
+}
+
+function isVideo(ext) {
+  return ["mp4", "webm", "mov", "avi", "mkv"].includes(ext);
+}
+
+async function loadFiles() {
+  const prefix = document.getElementById("prefixFilter").value;
+  const data = await api("/api/list?prefix=" + encodeURIComponent(prefix));
+  allFiles = data.files;
+  applyFilter();
+}
+
+function applyFilter() {
+  const q = document.getElementById("search").value.toLowerCase();
+  const typeFilter = document.querySelector(".type-btn.active")?.dataset?.type || "all";
+
+  filteredFiles = allFiles.filter((f) => {
+    if (q && !f.key.toLowerCase().includes(q)) return false;
+    if (typeFilter === "image" && !isImage(f.ext)) return false;
+    if (typeFilter === "video" && !isVideo(f.ext)) return false;
+    if (typeFilter === "other" && isImage(f.ext) && !isVideo(f.ext)) return false;
+    return true;
+  });
+
+  render();
+}
+
+function render() {
+  const grid = document.getElementById("fileGrid");
+  const info = document.getElementById("fileInfo");
+
+  if (filteredFiles.length === 0) {
+    grid.innerHTML = '<div class="empty">NOTHING_FOUND</div>';
+    info.innerHTML = "";
+    document.getElementById("selectionBar").style.display = "none";
+    return;
+  }
+
+  const selCount = filteredFiles.filter((f) => selection.has(f.key)).length;
+  document.getElementById("selectionBar").style.display = selCount > 0 ? "flex" : "none";
+  document.getElementById("selCount").textContent = selCount;
+
+  let html = "";
+  for (const f of filteredFiles) {
+    const selected = selection.has(f.key) ? " selected" : "";
+    const thumb = isImage(f.ext)
+      ? `<img src="/api/proxy?key=${encodeURIComponent(f.key)}" loading="lazy" onerror="this.style.display='none'">`
+      : isVideo(f.ext)
+        ? `<div class="vid-icon">▶</div>`
+        : `<div class="file-icon">${f.ext.toUpperCase()}</div>`;
+
+    html += `
+      <div class="card${selected}" data-key="${f.key}" onclick="toggleSel('${f.key.replace(/'/g, "\\'")}')" ondblclick="openMove('${f.key.replace(/'/g, "\\'")}')">
+        <div class="thumb">${thumb}</div>
+        <div class="card-info">
+          <div class="card-name" title="${f.key}">${f.key.split("/").pop()}</div>
+          <div class="card-meta">${fmtSize(f.size)} · ${fmtDate(f.lastModified)}</div>
+        </div>
+      </div>`;
+  }
+  grid.innerHTML = html;
+
+  const totalSize = filteredFiles.reduce((s, f) => s + (f.size || 0), 0);
+  info.innerHTML = `${filteredFiles.length} files · ${fmtSize(totalSize)}`;
+}
+
+function toggleSel(key) {
+  if (selection.has(key)) selection.delete(key);
+  else selection.add(key);
+  render();
+}
+
+async function deleteSelected() {
+  if (selection.size === 0) return;
+  const keys = [...selection].filter((k) => !k.endsWith(".json"));
+  if (keys.length === 0) return;
+  if (!confirm(`Delete ${keys.length} file(s)?`)) return;
+
+  try {
+    await api("/api/objects", { method: "DELETE", body: JSON.stringify({ keys }) });
+    selection.clear();
+    await loadFiles();
+  } catch (err) {
+    alert("Error: " + err.message);
+  }
+}
+
+function openMove(key) {
+  document.getElementById("moveKey").value = key;
+  showDialog("moveDialog");
+}
+
+async function doMove() {
+  const key = document.getElementById("moveKey").value;
+  const dest = document.getElementById("moveDest").value;
+  if (!dest) return;
+
+  try {
+    await api("/api/move", {
+      method: "POST",
+      body: JSON.stringify({ source: key, destination: dest }),
+    });
+    hideDialog("moveDialog");
+    document.getElementById("moveDest").value = "";
+    await loadFiles();
+  } catch (err) {
+    alert("Error: " + err.message);
+  }
+}
+
+function openBatchMove() {
+  showDialog("batchMoveDialog");
+}
+
+async function doBatchMove() {
+  const from = document.getElementById("batchFrom").value;
+  const to = document.getElementById("batchTo").value;
+  if (!from || !to) return;
+
+  try {
+    const r = await api("/api/batch-move", {
+      method: "POST",
+      body: JSON.stringify({ fromPrefix: from, toPrefix: to }),
+    });
+    hideDialog("batchMoveDialog");
+    document.getElementById("batchFrom").value = "";
+    document.getElementById("batchTo").value = "";
+    alert(`Moved ${r.moved} files`);
+    await loadFiles();
+  } catch (err) {
+    alert("Error: " + err.message);
+  }
+}
+
+function showDialog(id) {
+  document.getElementById(id).style.display = "flex";
+}
+function hideDialog(id) {
+  document.getElementById(id).style.display = "none";
+}
+
+function setTypeFilter(type, btn) {
+  document.querySelectorAll(".type-btn").forEach((b) => b.classList.remove("active"));
+  btn.classList.add("active");
+  applyFilter();
+}
+
+async function loadStats() {
+  try {
+    stats = await api("/api/stats");
+    const el = document.getElementById("stats");
+    const types = Object.entries(stats.byExt)
+      .sort((a, b) => b[1] - a[1])
+      .map(([ext, count]) => `<span class="stat-tag" onclick="quickFilter('.${ext}')">.${ext} ${count}</span>`)
+      .join("");
+    el.innerHTML = `
+      <div class="stat-row"><span class="stat-label">Total</span><span>${stats.totalFiles} files · ${fmtSize(stats.totalSize)}</span></div>
+      <div class="stat-types">${types}</div>
+    `;
+  } catch {}
+}
+
+function quickFilter(ext) {
+  document.getElementById("search").value = ext;
+  applyFilter();
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  await loadStats();
+  await loadFiles();
+  document.getElementById("search").addEventListener("input", applyFilter);
+  document.getElementById("prefixFilter").addEventListener("change", loadFiles);
+});
+</script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0d1117; color: #e6edf3;
+  min-height: 100vh;
+}
+.header {
+  background: #161b22; border-bottom: 1px solid #30363d;
+  padding: 12px 20px; display: flex; align-items: center; gap: 16px;
+  position: sticky; top: 0; z-index: 100;
+}
+.header h1 { font-size: 18px; font-weight: 600; color: #58a6ff; }
+.header .sub { color: #8b949e; font-size: 12px; }
+.toolbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 12px 20px; background: #0d1117;
+  border-bottom: 1px solid #21262d;
+}
+.toolbar input, .toolbar select {
+  background: #161b22; color: #e6edf3; border: 1px solid #30363d;
+  border-radius: 6px; padding: 6px 12px; font-size: 13px; outline: none;
+}
+.toolbar input:focus { border-color: #58a6ff; }
+.toolbar input[type="text"] { width: 240px; }
+.btn {
+  background: #21262d; color: #e6edf3; border: 1px solid #30363d;
+  border-radius: 6px; padding: 6px 14px; font-size: 13px;
+  cursor: pointer; transition: .15s;
+}
+.btn:hover { background: #30363d; }
+.btn-del { background: #3d1f1f; border-color: #6b3030; color: #f85149; }
+.btn-del:hover { background: #5c2a2a; }
+.btn-primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+.btn-primary:hover { background: #388bfd; }
+.type-btn { background: #161b22; }
+.type-btn.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+
+.content { display: flex; gap: 16px; padding: 16px 20px; }
+.sidebar { width: 260px; flex-shrink: 0; }
+.main { flex: 1; min-width: 0; }
+
+.stats-panel {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 16px; margin-bottom: 16px;
+}
+.stat-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+.stat-label { color: #8b949e; }
+.stat-types { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.stat-tag {
+  background: #21262d; border: 1px solid #30363d; border-radius: 4px;
+  padding: 2px 8px; font-size: 11px; cursor: pointer; transition: .15s;
+}
+.stat-tag:hover { border-color: #58a6ff; }
+
+#fileGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+.card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  overflow: hidden; cursor: pointer; transition: .15s;
+}
+.card:hover { border-color: #58a6ff; }
+.card.selected { border-color: #1f6feb; box-shadow: 0 0 0 2px #1f6feb44; }
+.thumb {
+  width: 100%; aspect-ratio: 4/3; background: #0d1117;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+.thumb img { width: 100%; height: 100%; object-fit: cover; }
+.vid-icon { font-size: 32px; color: #58a6ff; }
+.file-icon { font-size: 14px; color: #8b949e; font-weight: 600; }
+.card-info { padding: 8px; }
+.card-name { font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-meta { font-size: 11px; color: #8b949e; margin-top: 2px; }
+
+.empty {
+  text-align: center; padding: 60px 20px; color: #8b949e;
+  font-size: 14px;
+}
+
+.selection-bar {
+  display: none; align-items: center; gap: 8px;
+  padding: 8px 20px; background: #161b22; border-bottom: 1px solid #30363d;
+}
+.selection-bar .count { font-size: 13px; font-weight: 500; color: #58a6ff; }
+
+#fileInfo { font-size: 13px; color: #8b949e; padding: 8px 0; }
+
+/* Dialog */
+.dialog-overlay {
+  display: none; position: fixed; inset: 0; z-index: 999;
+  background: rgba(0,0,0,.6); align-items: center; justify-content: center;
+}
+.dialog {
+  background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+  padding: 24px; width: 400px; max-width: 90vw;
+}
+.dialog h2 { font-size: 16px; margin-bottom: 16px; }
+.dialog label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px; }
+.dialog input {
+  width: 100%; background: #0d1117; color: #e6edf3; border: 1px solid #30363d;
+  border-radius: 6px; padding: 8px 12px; font-size: 13px; outline: none;
+  margin-bottom: 12px;
+}
+.dialog input:focus { border-color: #58a6ff; }
+.dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
+@media (max-width: 768px) {
+  .content { flex-direction: column; }
+  .sidebar { width: 100%; }
+  #fileGrid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .toolbar input[type="text"] { width: 160px; }
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>◈ MinIO Manager</h1>
+  <span class="sub" id="stats"></span>
+</div>
+
+<div class="toolbar">
+  <input type="text" id="search" placeholder="Search files..." spellcheck="false">
+  <select id="prefixFilter">
+    <option value="">All (root)</option>
+  </select>
+  <button class="type-btn btn active" data-type="all" onclick="setTypeFilter('all',this)">ALL</button>
+  <button class="type-btn btn" data-type="image" onclick="setTypeFilter('image',this)">IMG</button>
+  <button class="type-btn btn" data-type="video" onclick="setTypeFilter('video',this)">VID</button>
+  <button class="type-btn btn" data-type="other" onclick="setTypeFilter('other',this)">DOC</button>
+  <button class="btn" onclick="loadFiles()">⟳</button>
+  <div id="fileInfo"></div>
+</div>
+
+<div class="selection-bar" id="selectionBar">
+  <span class="count" id="selCount">0</span>
+  <span style="color:#8b949e;font-size:13px">selected</span>
+  <button class="btn btn-del" onclick="deleteSelected()">DELETE</button>
+  <button class="btn" onclick="openBatchMove()">BATCH MOVE</button>
+  <button class="btn" onclick="selection.clear();render()">CLEAR</button>
+</div>
+
+<div class="content">
+  <div class="sidebar">
+    <div class="stats-panel" id="stats"></div>
+  </div>
+  <div class="main">
+    <div id="fileGrid"></div>
+  </div>
+</div>
+
+<div class="dialog-overlay" id="moveDialog" onclick="if(event.target===this)hideDialog('moveDialog')">
+  <div class="dialog">
+    <h2>MOVE FILE</h2>
+    <label>Source key</label>
+    <input id="moveKey" readonly>
+    <label>Destination key</label>
+    <input id="moveDest" placeholder="e.g. Folder/newfilename.mp4" onkeydown="if(event.key==='Enter')doMove()">
+    <div class="dialog-actions">
+      <button class="btn" onclick="hideDialog('moveDialog')">CANCEL</button>
+      <button class="btn btn-primary" onclick="doMove()">MOVE</button>
+    </div>
+  </div>
+</div>
+
+<div class="dialog-overlay" id="batchMoveDialog" onclick="if(event.target===this)hideDialog('batchMoveDialog')">
+  <div class="dialog">
+    <h2>BATCH MOVE</h2>
+    <label>From prefix</label>
+    <input id="batchFrom" placeholder="e.g. OldFolder/">
+    <label>To prefix</label>
+    <input id="batchTo" placeholder="e.g. NewFolder/" onkeydown="if(event.key==='Enter')doBatchMove()">
+    <div class="dialog-actions">
+      <button class="btn" onclick="hideDialog('batchMoveDialog')">CANCEL</button>
+      <button class="btn btn-primary" onclick="doBatchMove()">MOVE ALL</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
