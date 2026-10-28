@@ -1,0 +1,209 @@
+// Prisma schema для HData.
+// PostgreSQL 17, junction-таблицы с onDelete: Cascade.
+// BigInt используется для size — сериализуется через monkey-patch в main.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Основная модель медиафайлов (img/gif/video)
+model File {
+  id        String   @id @default(uuid())
+  filename  String
+  path      String   @unique          // ключ в MinIO
+  type      String                    // img | gif | video
+  size      BigInt
+  mimeType  String   @map("mime_type")
+  thumbnail String?                   // путь к превью в MinIO
+  width     Int?
+  height    Int?
+  duration  Int?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tags         FileTag[]
+  collections  FileCollection[]
+  collectionGroups FileCollectionGroup[]
+
+  @@map("files")
+}
+
+// Теги (name + hex color)
+model Tag {
+  id    String @id @default(uuid())
+  name  String
+  color String @default("#6b7280")
+
+  files FileTag[]
+
+  @@map("tags")
+}
+
+// M:N связь файл↔тег
+model FileTag {
+  fileId String @map("file_id")
+  tagId  String @map("tag_id")
+  file   File   @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  tag    Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([fileId, tagId])
+  @@map("file_tags")
+}
+
+// Коллекции (именованные группы)
+model Collection {
+  id   String @id @default(uuid())
+  name String
+
+  files  FileCollection[]
+  groups CollectionGroup[]
+
+  @@map("collections")
+}
+
+// M:N связь файл↔коллекция
+model FileCollection {
+  fileId       String     @map("file_id")
+  collectionId String     @map("collection_id")
+  file         File       @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@id([fileId, collectionId])
+  @@map("file_collections")
+}
+
+// Группа внутри коллекции (подкатегория). Привязана к конкретной коллекции — не пересекается с группами других коллекций.
+model CollectionGroup {
+  id           String   @id @default(uuid())
+  name         String
+  collectionId String   @map("collection_id")
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  files FileCollectionGroup[]
+
+  @@map("collection_groups")
+}
+
+// M:N связь файл↔группа коллекции
+model FileCollectionGroup {
+  fileId  String          @map("file_id")
+  groupId String          @map("group_id")
+  file    File            @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  group   CollectionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([fileId, groupId])
+  @@map("file_collection_groups")
+}
+
+// Приложение (магазин)
+model App {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  version     String?
+  coverImg    String?  @map("cover_img")
+  size        BigInt?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  screenshots AppScreenshot[]
+  videos      AppVideo[]
+  downloads   AppDownload[]
+
+  @@map("apps")
+}
+
+// Скриншоты приложения (упорядоченные)
+model AppScreenshot {
+  id    String @id @default(uuid())
+  appId String @map("app_id")
+  path  String
+  order Int    @default(0)
+
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@map("app_screenshots")
+}
+
+// Видео приложения
+model AppVideo {
+  id    String @id @default(uuid())
+  appId String @map("app_id")
+  path  String
+  order Int    @default(0)
+
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@map("app_videos")
+}
+
+// Файлы для скачивания (APK, EXE и т.д.)
+model AppDownload {
+  id      String @id @default(uuid())
+  appId   String @map("app_id")
+  path    String
+  name    String
+  size    BigInt
+  version String?
+
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@map("app_downloads")
+}
+
+// Манга — тайтл с обложкой и списком глав
+model Manga {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  coverImg    String?  @map("cover_img")       // путь в MinIO: manga/{id}/cover.jpg
+  coverFrom   String?  @map("cover_from")      // "upload" | "first" | "page:N"
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  chapters  MangaChapter[]
+  mangaTags MangaTagManga[]
+
+  @@map("manga")
+}
+
+// Глава манги — PDF-файл
+model MangaChapter {
+  id            String   @id @default(uuid())
+  mangaId       String   @map("manga_id")
+  title         String?
+  chapterNumber Float    @map("chapter_number")  // 1, 1.5, 2, 3 и т.д.
+  filePath      String   @map("file_path")       // manga/{id}/ch{number}.pdf
+  pageCount     Int?     @map("page_count")
+  size          BigInt
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  manga Manga @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+
+  @@map("manga_chapters")
+}
+
+// Тег для манги — name + hex color (аналог Tag, но отдельная сущность)
+model MangaTag {
+  id    String @id @default(uuid())
+  name  String @unique
+  color String // hex: "#ff5500"
+
+  mangaTags MangaTagManga[]
+
+  @@map("manga_tags")
+}
+
+// Junction: манга ↔ тег
+model MangaTagManga {
+  mangaId String @map("manga_id")
+  tagId   String @map("tag_id")
+
+  manga Manga     @relation(fields: [mangaId], references: [id], onDelete: Cascade)
+  tag   MangaTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([mangaId, tagId])
+  @@map("manga_tag_manga")
+}
